@@ -286,9 +286,9 @@
     border-radius:calc(var(--cc-w) * 0.14);
     border:1px solid rgba(0,0,0,.18);
     background:#fff;
-    box-shadow:0 18px 40px rgba(0,0,0,.22);
+    box-shadow:0 10px 20px rgba(0,0,0,.14);
     display:flex;align-items:center;justify-content:center;
-    font-weight:900;
+    font-weight:800;
     font-size:var(--cc-font);
     pointer-events:none;
     transform:translate(-9999px,-9999px);
@@ -757,6 +757,24 @@ function removeDragFloat(){
   dragFloatEl.remove();
   dragFloatEl = null;
 }
+
+function syncDragFloatStyleFromCard(cardEl){
+  if (!dragFloatEl || !cardEl) return;
+  const cs = getComputedStyle(cardEl);
+  dragFloatEl.style.width = cs.width;
+  dragFloatEl.style.height = cs.height;
+  dragFloatEl.style.borderRadius = cs.borderRadius;
+  dragFloatEl.style.border = cs.border;
+  dragFloatEl.style.background = cs.background;
+  dragFloatEl.style.boxShadow = cs.boxShadow;
+  dragFloatEl.style.font = cs.font;
+  dragFloatEl.style.fontSize = cs.fontSize;
+  dragFloatEl.style.fontWeight = cs.fontWeight;
+  dragFloatEl.style.color = cs.color;
+  dragFloatEl.style.letterSpacing = cs.letterSpacing;
+  dragFloatEl.style.lineHeight = cs.lineHeight;
+}
+
 function beginDragFromCard(cardEl, cardObj, idx, e){
   // 右クリック等は無視
   if (e.pointerType === 'mouse' && e.button !== 0) return;
@@ -777,6 +795,7 @@ function beginDragFromCard(cardEl, cardObj, idx, e){
 
   const floatEl = ensureDragFloat();
   floatEl.textContent = cardObj.label ?? '';
+  syncDragFloatStyleFromCard(cardEl);
   moveDragFloat(e.clientX, e.clientY);
 
   // 見た目更新（元カードはghostにする）
