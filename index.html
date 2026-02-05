@@ -286,9 +286,9 @@
     border-radius:calc(var(--cc-w) * 0.14);
     border:1px solid rgba(0,0,0,.18);
     background:#fff;
-    box-shadow:0 18px 40px rgba(0,0,0,.22);
+    box-shadow:0 10px 20px rgba(0,0,0,.14);
     display:flex;align-items:center;justify-content:center;
-    font-weight:900;
+    font-weight:800;
     font-size:var(--cc-font);
     pointer-events:none;
     transform:translate(-9999px,-9999px);
@@ -424,7 +424,11 @@ const db  = getDatabase(app);
 
 /* ✅ 追加：確実にスクロール禁止（モバイルも含む） */
 function lockScroll(){
-  const prevent = (e) => { e.preventDefault(); };
+  const prevent = (e) => {
+    /* 中央カード列のタッチ操作は許可（ドラッグ用） */
+    if (e.target && typeof e.target.closest === 'function' && e.target.closest('#centerRow')) return;
+    e.preventDefault();
+  };
   window.addEventListener('wheel', prevent, { passive:false });
   window.addEventListener('touchmove', prevent, { passive:false });
   window.addEventListener('keydown', (e) => {
