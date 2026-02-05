@@ -1,0 +1,1281 @@
+<!DOCTYPE html>    
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>テンプレ</title>
+<style>
+  /* =========================
+     ✅ 追加①：スクロール禁止（スクロールバー消す）
+     ========================= */
+  html, body{
+    height:100%;
+    overflow:hidden;
+    overscroll-behavior:none;
+    touch-action:manipulation;
+  }
+  body{
+    margin:0;
+    font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+    background:#fff;color:#111;
+    position:fixed;
+    inset:0;
+  }
+
+  header{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border-bottom:1px solid #eee; position:sticky; top:0; z-index:400; background:#fff;}
+  h1{margin:0;font-size:18px;}
+  .small{font-size:12px;opacity:.75;}
+  .join-box{display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:12px; position:relative; z-index:2;}
+  .join-box input{padding:8px;border:1px solid #ddd;border-radius:6px;font-size:16px;}
+  .btn{padding:6px 10px;border:1px solid #ddd;border-radius:6px;background:#f8f8f8;cursor:pointer;}
+  .btn.primary{background:#111;color:#fff;border-color:#111;}
+  .btn.ghost{background:transparent;}
+  .hidden{display:none;}
+  #lobby{padding:20px;border-top:1px solid #eee; position:relative; z-index:2;}
+  .copy-btn.copied, .btn.ghost.copied{background:#16a34a;color:#fff;border-color:#16a34a;}
+
+  /* ★ main背景：入室前/入室後で切替 */
+  main{
+    position:relative;
+    height:calc(100vh - 60px);
+    overflow:hidden;
+    background-size:cover;
+    background-position:center;
+    background-repeat:no-repeat;
+    touch-action:manipulation; /* ✅ 変更：main全体は操作OK（ドラッグ中のスクロールはJSで抑止） */
+  }
+  main.prejoin{ background-image:url('maemain.jpg'); }
+  main.joined{ background-image:url('maingazo.jpg'); }
+
+  /* ★ 着席ポップ */
+  .seat-pop{
+    position:fixed;left:50%;bottom:10px;transform:translateX(-50%);
+    background:orange;border:1px solid #eee;border-radius:12px;
+    box-shadow:0 12px 28px rgba(0,0,0,.12);
+    padding:10px;z-index:220;display:flex;flex-direction:column;gap:10px;min-width:280px;
+  }
+  .seat-pop.hidden{display:none;}
+  .seat-pop .row{display:flex;gap:8px;align-items:center;}
+  .seat-pop label{width:84px;font-size:13px;}
+  .seat-pop .tabs{display:flex;gap:6px;flex-wrap:wrap;}
+  .tab{padding:6px 10px;border:1px solid #ddd;border-radius:999px;cursor:pointer;user-select:none;position:relative;}
+  .tab.disabled{opacity:.45; pointer-events:none;}
+  .tab.disabled::after{content:'✕';position:absolute;inset:0;display:grid;place-items:center;font-size:18px;font-weight:700;color:#b91c1c;pointer-events:none;}
+  .tab.active{background:#111;color:#fff;border-color:#111;}
+
+  /* ★ ホスト人数選択中：参加者に出す黒ポップ（下固定） */
+  .host-selecting-pop{
+    position:fixed;left:50%;bottom:10px;transform:translateX(-50%);
+    background:rgba(20,20,20,.92);color:#fff;
+    padding:12px 16px;border-radius:14px;
+    box-shadow:0 18px 40px rgba(0,0,0,.35);
+    z-index:225;font-weight:800;white-space:nowrap;
+    pointer-events:none;
+  }
+  .host-selecting-pop.hidden{display:none;}
+
+  /* ★ プレイヤー円配置用 */
+  .player-circle{
+    position:relative;width:260px;height:260px;
+    margin:20px auto 0;border-radius:50%;
+    box-sizing:border-box;border:none;
+  }
+  .player-circle::before{content:'';}
+  .player-tag{
+    position:absolute;transform:translate(-50%,-50%);
+    padding:4px 8px;border-radius:999px;background:#f8f8f8;
+    border:1px solid #ddd;font-size:12px;white-space:nowrap;
+  }
+  .player-tag.me{ background:#111;color:#fff;border-color:#111; }
+
+  /* 他プレイヤーのミニカード（ネームタグの下に扇状） */
+  .player-tag .mini-hand{
+    position:absolute;left:50%;top:100%;
+    transform:translate(-50%,3px);
+    width:60px;height:30px;pointer-events:none;
+  }
+  .player-tag .mini-card{
+    position:absolute;left:50%;top:0;width:16px;height:22px;
+    border-radius:4px;border:1px solid #bbb;
+    background:linear-gradient(135deg,#e5e7eb,#cbd5f5);
+    font-size:10px;display:flex;align-items:center;justify-content:center;
+    transform-origin:bottom center;
+    box-shadow:0 2px 6px rgba(0,0,0,.15);
+  }
+
+  /* 自分の手札表示（今回は使わないが残しておく） */
+  .my-hand-wrapper{margin-top:16px;text-align:center; display:none;}
+  .my-hand-title{display:none;}
+  .my-hand{display:flex;justify-content:center;gap:8px;margin-top:6px;min-height:100px;}
+  .my-card{
+    width:60px;height:90px;border-radius:8px;border:1px solid #ddd;background:#fff;
+    display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:600;
+    box-shadow:0 4px 12px rgba(0,0,0,.15);
+  }
+
+  /* ★ 追い出し確認ダイアログ */
+  .dialog-backdrop{
+    position:fixed;inset:0;background:rgba(0,0,0,.35);
+    display:flex;align-items:center;justify-content:center;z-index:300;
+  }
+  .dialog-backdrop.hidden{display:none;}
+  .dialog-box{
+    background:#fff;border-radius:12px;padding:16px 18px;
+    box-shadow:0 18px 40px rgba(0,0,0,.35);
+    max-width:320px;width:calc(100% - 40px);
+  }
+  .dialog-box p{margin:0 0 12px;font-size:14px;line-height:1.6;}
+  .dialog-buttons{display:flex;justify-content:flex-end;gap:8px;}
+
+  /* ★ ホスト用 設定ボタン（右下固定） */
+  .host-settings-btn{
+    position:fixed;right:16px;bottom:16px;width:44px;height:44px;border-radius:50%;
+    border:1px solid #ddd;background:#fff;box-shadow:0 8px 20px rgba(0,0,0,.18);
+    display:none;align-items:center;justify-content:center;font-size:22px;cursor:pointer;z-index:230;
+  }
+  .host-settings-btn.visible{display:flex;}
+
+  /* ★ 設定ポップ（ホスト専用パネル） */
+  .start-pop{
+    position:fixed;right:16px;bottom:72px;background:#fff;border:1px solid #ddd;border-radius:12px;
+    box-shadow:0 12px 28px rgba(0,0,0,.16);padding:10px 12px;z-index:240;min-width:260px;
+    display:flex;flex-direction:column;gap:8px;
+  }
+  .start-pop.hidden{display:none;}
+  .start-pop-header{display:flex;justify-content:space-between;align-items:center;gap:8px;}
+  .start-pop-title{font-size:14px;font-weight:600;}
+  .start-pop-main{font-size:13px;line-height:1.5;}
+  .start-pop-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:4px;flex-wrap:wrap;}
+
+  /* 詳細情報消す用 */
+  #roomInfoLobby, #lobby h2, #lobby p {display:none;}
+  #lobby.entered{
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    min-height:calc(100vh - 60px);
+  }
+
+  /* =========================
+     ★ 追加：左下「？」ボタン
+     ========================= */
+  .help-btn{
+    position:fixed;left:16px;bottom:16px;width:44px;height:44px;border-radius:50%;
+    border:1px solid #111;background:#111;color:#fff;
+    box-shadow:0 8px 20px rgba(0,0,0,.18);
+    display:none;align-items:center;justify-content:center;
+    font-size:22px;font-weight:800;cursor:pointer;z-index:230;
+  }
+  .help-btn.visible{display:flex;}
+
+  /* ★ 追加：ヘルプ一覧ポップ */
+  .help-pop-backdrop{
+    position:fixed;inset:0;background:rgba(0,0,0,.35);
+    display:flex;align-items:flex-end;justify-content:center;
+    z-index:310;
+    padding:16px;
+  }
+  .help-pop-backdrop.hidden{display:none;}
+  .help-pop{
+    width:min(520px, calc(100% - 0px));
+    max-height:min(70vh, 640px);
+    background:#fff;border:1px solid #ddd;border-radius:16px;
+    box-shadow:0 18px 40px rgba(0,0,0,.35);
+    overflow:hidden;
+  }
+  .help-pop-header{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:10px 12px;border-bottom:1px solid #eee;
+  }
+  .help-pop-title{font-weight:800;font-size:14px;}
+  .help-pop-body{padding:12px;overflow:auto;max-height:calc(70vh - 48px);}
+  .role-row{
+    display:flex;gap:12px;align-items:flex-start;
+    padding:10px 0;
+  }
+  .role-card{
+    width:72px;height:108px;border-radius:10px;border:1px solid #ddd;background:#f8f8f8;
+    box-shadow:0 6px 16px rgba(0,0,0,.10);
+    flex:0 0 auto;
+    display:flex;align-items:center;justify-content:center;
+    font-size:12px;font-weight:700;color:#444;
+  }
+  .role-desc{flex:1 1 auto;}
+  .role-desc .name{font-weight:900;margin-bottom:4px;}
+  .role-desc .text{font-size:13px;line-height:1.55;color:#222;white-space:pre-wrap;}
+
+  /* =========================
+     ★ 追加：上下中央の「10枚横一列」並び替えエリア
+     ========================= */
+  #centerRowWrap{
+    position:fixed;
+    left:50%;
+    top:50%;
+    transform:translate(-50%,-50%);
+    z-index:210;
+    width:calc(100% - 24px);
+    pointer-events:auto;
+
+    --cc-w: 68px;
+    --cc-h: 96px;
+    --cc-gap: 10px;
+    --cc-font: 18px;
+    --cc-padX: 10px;
+    --cc-padY: 10px;
+
+    --cc-insFactor: 0.95;
+  }
+  .center-row{
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    gap:var(--cc-gap);
+    padding:var(--cc-padY) var(--cc-padX);
+    border-radius:16px;
+    background:rgba(255,255,255,.55);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    box-shadow:0 12px 28px rgba(0,0,0,.12);
+    user-select:none;
+    overflow:hidden;
+    position:relative;
+
+    touch-action:none;            /* ✅ 重要：ここでタッチドラッグを有効化 */
+    -webkit-user-select:none;
+  }
+
+  .center-card{
+    width:var(--cc-w);
+    height:var(--cc-h);
+    border-radius:calc(var(--cc-w) * 0.14);
+    border:1px solid rgba(0,0,0,.18);
+    background:#fff;
+    box-shadow:0 10px 20px rgba(0,0,0,.14);
+    display:flex;align-items:center;justify-content:center;
+    font-weight:800;
+    font-size:var(--cc-font);
+    cursor:grab;
+    position:relative;
+    flex:0 0 auto;
+    transition:none;
+    will-change: transform;
+
+    touch-action:none;            /* ✅ 重要：カード自身もタッチドラッグ優先 */
+    -webkit-user-select:none;
+  }
+  .center-card:active{cursor:grabbing;}
+
+  .center-row.dragging .center-card{
+    transition: transform .08s linear;
+  }
+
+  .center-ghost{
+    width:var(--cc-w);
+    height:var(--cc-h);
+    border-radius:calc(var(--cc-w) * 0.14);
+    flex:0 0 auto;
+    visibility:hidden;
+    pointer-events:none;
+  }
+
+  /* ✅ タッチ用：指に追従するフローティングカード */
+  .drag-float{
+    position:fixed;
+    left:0; top:0;
+    z-index:9999;
+    width:var(--cc-w);
+    height:var(--cc-h);
+    border-radius:calc(var(--cc-w) * 0.14);
+    border:1px solid rgba(0,0,0,.18);
+    background:#fff;
+    box-shadow:0 18px 40px rgba(0,0,0,.22);
+    display:flex;align-items:center;justify-content:center;
+    font-weight:900;
+    font-size:var(--cc-font);
+    pointer-events:none;
+    transform:translate(-9999px,-9999px);
+  }
+
+  /* =========================
+     ✅ 追加②：カード移動時の青カード(insertMarker)を透明化
+     ========================= */
+  #insertMarker{
+    position:absolute;
+    top:0;
+    left:-9999px;
+    width:calc(var(--cc-w) * var(--cc-insFactor));
+    height:var(--cc-h);
+    border-radius:calc(var(--cc-w) * 0.14);
+
+    background:transparent;
+    box-shadow:none;
+    outline:none;
+
+    pointer-events:none;
+    opacity:0;
+    transition:opacity .06s linear;
+  }
+  #insertMarker.visible{
+    opacity:1;
+    filter: drop-shadow(0 0 10px rgba(0,0,0,.18));
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>テンプレ</h1>
+  <div style="display:flex;align-items:center;gap:6px;">
+    <div class="small" id="roomInfo"></div>
+    <button class="btn ghost" id="copyLinkBtn">COPY</button>
+  </div>
+</header>
+
+<main id="main" class="prejoin">
+  <div class="join-box" id="joinBox">
+    <input id="userName" placeholder="名前（4文字以内）" maxlength="4" />
+    <input id="roomCode" placeholder="ルームコード（未入力で自動生成）" maxlength="12" />
+    <button class="btn primary" id="btnJoin">入室</button>
+  </div>
+
+  <div id="lobby" class="hidden">
+    <h2>ロビー</h2>
+    <div id="roomInfoLobby" style="margin-bottom:8px;"></div>
+    <p>ここにテーブルや情報が表示されます。</p>
+
+    <div id="playerCircle" class="player-circle"></div>
+
+    <div class="my-hand-wrapper">
+      <div class="my-hand-title">自分のカード</div>
+      <div id="myHand" class="my-hand"></div>
+    </div>
+  </div>
+</main>
+
+<div id="centerRowWrap" class="hidden">
+  <div id="centerRow" class="center-row" aria-label="中央カード列">
+    <div id="insertMarker"></div>
+  </div>
+</div>
+
+<div id="hostSelectingPop" class="host-selecting-pop hidden">ホストが人数を選択中</div>
+
+<div id="seatPop" class="seat-pop hidden">
+  <div class="row"><label>席を選択</label><div id="seatTabs" class="tabs"></div></div>
+  <div class="row" style="justify-content:flex-end">
+    <button class="btn small ghost" id="btnSeatCancel">観戦</button>
+  </div>
+</div>
+
+<div id="kickDialog" class="dialog-backdrop hidden">
+  <div class="dialog-box" id="kickDialogBox">
+    <p id="kickMessage">既存のプレイヤーを追い出して、着席しますか？</p>
+    <div class="dialog-buttons">
+      <button class="btn ghost" id="btnKickNo">いいえ</button>
+      <button class="btn primary" id="btnKickYes">はい</button>
+    </div>
+  </div>
+</div>
+
+<button id="hostSettingsBtn" class="host-settings-btn" title="設定">⚙</button>
+
+<button id="helpBtn" class="help-btn" title="正体カード一覧">？</button>
+
+<div id="helpBackdrop" class="help-pop-backdrop hidden">
+  <div class="help-pop" role="dialog" aria-modal="true" aria-label="正体カード一覧">
+    <div class="help-pop-header">
+      <div class="help-pop-title">正体カード</div>
+      <button id="btnHelpClose" class="btn ghost" style="padding:2px 6px;font-size:12px;">×</button>
+    </div>
+    <div class="help-pop-body" id="helpBody"></div>
+  </div>
+</div>
+
+<div id="startPop" class="start-pop hidden">
+  <div class="start-pop-header">
+    <div class="start-pop-title">ホスト設定</div>
+    <button id="btnStartPopClose" class="btn ghost" style="padding:2px 6px;font-size:12px;">×</button>
+  </div>
+  <div class="start-pop-main">
+    「スタート」で中央に10枚のカード列を生成（既にあれば上書きしません）。<br>
+    「リセット」で人数選択へ戻し、中央列も消します。
+  </div>
+  <div class="start-pop-actions">
+    <button id="btnResetRoom" class="btn ghost">リセット</button>
+    <button id="btnGameStart" class="btn primary">スタート</button>
+  </div>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
+import { getDatabase, ref, set, get, update, onValue, remove } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
+
+/* ▼ Firebase 設定 */
+const firebaseConfig = {
+  apiKey: "AIzaSyDUP1foVQnitM45do_UtYLkcc9gvgQC-xw",
+  authDomain: "timebomb-3b0c7.firebaseapp.com",
+  databaseURL: "https://timebomb-3b0c7-default-rtdb.firebaseio.com",
+  projectId: "timebomb-3b0c7",
+  storageBucket: "timebomb-3b0c7.firebasestorage.app",
+  messagingSenderId: "532935786630",
+  appId: "1:532935786630:web:ef1f97c862bfaad67d1107",
+  measurementId: "G-K8NRR8K64Y"
+};
+const app = initializeApp(firebaseConfig);
+const db  = getDatabase(app);
+
+/* ✅ 追加：確実にスクロール禁止（モバイルも含む） */
+function lockScroll(){
+  const prevent = (e) => { e.preventDefault(); };
+  window.addEventListener('wheel', prevent, { passive:false });
+  window.addEventListener('touchmove', prevent, { passive:false });
+  window.addEventListener('keydown', (e) => {
+    const keys = ['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','PageUp','PageDown','Home','End',' '];
+    if (keys.includes(e.key)) e.preventDefault();
+  }, { passive:false });
+}
+lockScroll();
+
+/* ★ userId をタブ単位で固定（タブごとに別ID） */
+const savedUserId = sessionStorage.getItem('bbUserId') || crypto.randomUUID();
+sessionStorage.setItem('bbUserId', savedUserId);
+
+/* ▼ 状態 */
+const state = {
+  userId: savedUserId,
+  userName: null,
+  roomCode: null,
+  seatedTable: null,
+  isHost: false,
+  room: {},
+  centerCards: []
+};
+
+const mainEl = document.getElementById('main');
+const joinBox = document.getElementById('joinBox');
+const inputName = document.getElementById('userName');
+const inputCode = document.getElementById('roomCode');
+const btnJoin = document.getElementById('btnJoin');
+const lobby = document.getElementById('lobby');
+const roomInfo = document.getElementById('roomInfo');
+const roomInfoLobby = document.getElementById('roomInfoLobby');
+const copyLinkBtn = document.getElementById('copyLinkBtn');
+
+const hostSelectingPop = document.getElementById('hostSelectingPop');
+
+const seatPop = document.getElementById('seatPop');
+const seatTabs = document.getElementById('seatTabs');
+const btnSeatCancel = document.getElementById('btnSeatCancel');
+const seatLabel = seatPop.querySelector('label');
+
+const playerCircle = document.getElementById('playerCircle');
+
+const kickDialog = document.getElementById('kickDialog');
+const kickMessage = document.getElementById('kickMessage');
+const btnKickYes = document.getElementById('btnKickYes');
+const btnKickNo = document.getElementById('btnKickNo');
+
+const hostSettingsBtn = document.getElementById('hostSettingsBtn');
+const startPop = document.getElementById('startPop');
+const btnStartPopClose = document.getElementById('btnStartPopClose');
+const btnGameStart = document.getElementById('btnGameStart');
+const btnResetRoom = document.getElementById('btnResetRoom');
+
+const helpBtn = document.getElementById('helpBtn');
+const helpBackdrop = document.getElementById('helpBackdrop');
+const btnHelpClose = document.getElementById('btnHelpClose');
+const helpBody = document.getElementById('helpBody');
+
+const centerRowWrap = document.getElementById('centerRowWrap');
+const centerRowEl = document.getElementById('centerRow');
+const insertMarkerEl = document.getElementById('insertMarker');
+
+const ROLE_HELP = [
+  { name: "カード1", text: "ああああ" },
+  { name: "カード2", text: "いいいい" },
+  { name: "カード3", text: "うううう" },
+  { name: "カード4", text: "うううう" },
+];
+
+function renderHelpList(){
+  helpBody.innerHTML = '';
+  ROLE_HELP.forEach((r, idx) => {
+    const row = document.createElement('div');
+    row.className = 'role-row';
+
+    const card = document.createElement('div');
+    card.className = 'role-card';
+    card.textContent = `CARD ${idx+1}`;
+
+    const desc = document.createElement('div');
+    desc.className = 'role-desc';
+    desc.innerHTML = `
+      <div class="name">${r.name}</div>
+      <div class="text">${r.text}</div>
+    `;
+
+    row.appendChild(card);
+    row.appendChild(desc);
+    helpBody.appendChild(row);
+  });
+}
+function openHelp(){
+  renderHelpList();
+  helpBackdrop.classList.remove('hidden');
+}
+function closeHelp(){
+  helpBackdrop.classList.add('hidden');
+}
+helpBtn.addEventListener('click', () => {
+  if (joinBox.classList.contains('hidden')) openHelp();
+});
+btnHelpClose.addEventListener('click', closeHelp);
+helpBackdrop.addEventListener('click', (e) => {
+  if (e.target === helpBackdrop) closeHelp();
+});
+
+let pendingSeatIndexToSteal = null;
+let pendingSeatPlayerIdToSteal = null;
+let isRenderingSeatTabs = false;
+let latestPlayers = [];
+
+/* =========================
+   ★ 並び替えドラッグ状態（タッチ対応版）
+   ========================= */
+let draggingId = null;
+let draggingFromIndex = -1;
+let insertIndex = null;
+let frozenSizing = null;
+let rafPending = false;
+
+/* ✅ タッチ用：フローティング表示 */
+let dragPointerId = null;
+let dragFloatEl = null;
+let dragOffsetX = 0;
+let dragOffsetY = 0;
+let isCommitting = false;
+
+function clamp(n, min, max){ return Math.max(min, Math.min(max, n)); }
+
+function computeBaseSizing(){
+  const wrapRect = centerRowWrap.getBoundingClientRect();
+  const wrapW = wrapRect.width;
+
+  const count = Math.max(10, (state.centerCards?.length || 0));
+  const padX = 10;
+  const padY = 10;
+
+  const usable = Math.max(0, wrapW - padX*2);
+
+  let gap = clamp(Math.floor(wrapW / 140), 3, 10);
+
+  let cardW = (usable - gap*(count-1)) / count;
+  cardW = clamp(Math.floor(cardW), 34, 90);
+
+  gap = (count > 1) ? (usable - cardW*count) / (count-1) : 0;
+  gap = clamp(Math.floor(gap), 0, 10);
+
+  const cardH = Math.floor(cardW * 1.4);
+  const font = clamp(Math.floor(cardW * 0.28), 10, 20);
+
+  return { cardW, cardH, font, gap, padX, padY };
+}
+
+function applySizing(s){
+  centerRowWrap.style.setProperty('--cc-w', `${s.cardW}px`);
+  centerRowWrap.style.setProperty('--cc-h', `${s.cardH}px`);
+  centerRowWrap.style.setProperty('--cc-font', `${s.font}px`);
+  centerRowWrap.style.setProperty('--cc-gap', `${s.gap}px`);
+  centerRowWrap.style.setProperty('--cc-padX', `${s.padX}px`);
+  centerRowWrap.style.setProperty('--cc-padY', `${s.padY}px`);
+  centerRowWrap.style.setProperty('--cc-insFactor', `0.95`);
+}
+
+function updateCenterCardSizing(){
+  if (centerRowWrap.classList.contains('hidden')) return;
+
+  if (draggingId && frozenSizing){
+    applySizing(frozenSizing);
+    return;
+  }
+  const s = computeBaseSizing();
+  applySizing(s);
+}
+
+window.addEventListener('resize', () => {
+  updateCenterCardSizing();
+  if (!centerRowWrap.classList.contains('hidden')) renderCenterRow();
+});
+
+const ro = new ResizeObserver(() => {
+  updateCenterCardSizing();
+  if (!centerRowWrap.classList.contains('hidden')) renderCenterRow();
+});
+ro.observe(centerRowWrap);
+
+function subscribeCenterCards(){
+  const ccRef = ref(db, `rooms/${state.roomCode}/centerCards`);
+  onValue(ccRef, snap => {
+    const data = snap.val();
+    const arr = Array.isArray(data) ? data : (data ? Object.values(data) : []);
+    state.centerCards = arr.filter(Boolean);
+
+    updateCenterCardSizing();
+    renderCenterRow();
+  });
+}
+
+function ensureInsertMarker(){
+  insertMarkerEl.classList.toggle('visible', !!draggingId && typeof insertIndex === 'number');
+}
+function hideInsertMarker(){
+  insertMarkerEl.classList.remove('visible');
+  insertMarkerEl.style.left = '-9999px';
+}
+
+function getStepPx(){
+  const s = (draggingId && frozenSizing) ? frozenSizing : computeBaseSizing();
+  return (s.cardW + s.gap);
+}
+
+function applyVisualShift(){
+  if (!draggingId || typeof insertIndex !== 'number' || draggingFromIndex < 0){
+    centerRowEl.classList.remove('dragging');
+    centerRowEl.querySelectorAll('.center-card').forEach(el => { el.style.transform = ''; });
+    return;
+  }
+  centerRowEl.classList.add('dragging');
+
+  const step = getStepPx();
+  const from = draggingFromIndex;
+  const to = clamp(insertIndex, 0, (state.centerCards?.length || 0));
+
+  centerRowEl.querySelectorAll('.center-card').forEach(el => {
+    const p = Number(el.dataset.index);
+    let dx = 0;
+
+    if (from < to){
+      if (p > from && p < to) dx = -step;
+    } else if (from > to){
+      if (p >= to && p < from) dx = +step;
+    }
+    el.style.transform = dx ? `translateX(${dx}px)` : '';
+  });
+}
+
+function getSlotElements(){
+  return [...centerRowEl.querySelectorAll('.center-card, .center-ghost')];
+}
+
+function calcInsertIndexFromClientX(clientX){
+  const slots = getSlotElements();
+  if (slots.length === 0) return 0;
+
+  const rowRect = centerRowEl.getBoundingClientRect();
+
+  const boundaries = new Array(slots.length + 1);
+  boundaries[0] = rowRect.left;
+  for (let i = 1; i < slots.length; i++){
+    const a = slots[i-1].getBoundingClientRect();
+    const b = slots[i].getBoundingClientRect();
+    boundaries[i] = (a.right + b.left) / 2;
+  }
+  boundaries[slots.length] = rowRect.right;
+
+  for (let i = 0; i < slots.length; i++){
+    if (clientX < boundaries[i+1]) return i;
+  }
+  return slots.length;
+}
+
+function updateInsertMarkerFromIndex(idx){
+  if (!draggingId || typeof idx !== 'number') { hideInsertMarker(); return; }
+
+  const slots = getSlotElements();
+  const rowRect = centerRowEl.getBoundingClientRect();
+  if (slots.length === 0) { hideInsertMarker(); return; }
+
+  const boundaries = new Array(slots.length + 1);
+  boundaries[0] = rowRect.left;
+  for (let i = 1; i < slots.length; i++){
+    const a = slots[i-1].getBoundingClientRect();
+    const b = slots[i].getBoundingClientRect();
+    boundaries[i] = (a.right + b.left) / 2;
+  }
+  boundaries[slots.length] = rowRect.right;
+
+  const bX = boundaries[clamp(idx, 0, slots.length)];
+
+  insertMarkerEl.classList.add('visible');
+  const mRect = insertMarkerEl.getBoundingClientRect();
+  const markerW = mRect.width || 0;
+
+  const refSlot = slots[Math.min(Math.max(Math.min(idx, slots.length-1), 0), slots.length-1)];
+  const sRect = refSlot.getBoundingClientRect();
+  const top = sRect.top - rowRect.top;
+
+  const left = (bX - rowRect.left) - markerW/2;
+
+  insertMarkerEl.style.top = `${Math.max(0, top)}px`;
+  insertMarkerEl.style.left = `${left}px`;
+}
+
+function scheduleDragOverUpdate(clientX){
+  if (rafPending) return;
+  rafPending = true;
+  requestAnimationFrame(() => {
+    rafPending = false;
+    const idx = calcInsertIndexFromClientX(clientX);
+    if (insertIndex !== idx){
+      insertIndex = idx;
+      updateInsertMarkerFromIndex(insertIndex);
+      applyVisualShift();
+    }
+  });
+}
+
+async function commitReorder(newArr){
+  if (!state.roomCode) return;
+  await set(ref(db, `rooms/${state.roomCode}/centerCards`), newArr);
+}
+
+/* ✅ タッチ/マウス共通：フローティングカード */
+function ensureDragFloat(){
+  if (dragFloatEl) return dragFloatEl;
+  dragFloatEl = document.createElement('div');
+  dragFloatEl.className = 'drag-float';
+  document.body.appendChild(dragFloatEl);
+  return dragFloatEl;
+}
+function moveDragFloat(clientX, clientY){
+  if (!dragFloatEl) return;
+  const x = clientX - dragOffsetX;
+  const y = clientY - dragOffsetY;
+  dragFloatEl.style.transform = `translate(${x}px, ${y}px)`;
+}
+function removeDragFloat(){
+  if (!dragFloatEl) return;
+  dragFloatEl.remove();
+  dragFloatEl = null;
+}
+function beginDragFromCard(cardEl, cardObj, idx, e){
+  // 右クリック等は無視
+  if (e.pointerType === 'mouse' && e.button !== 0) return;
+
+  draggingId = cardObj.id;
+  draggingFromIndex = idx;
+  insertIndex = idx;
+  isCommitting = false;
+
+  frozenSizing = computeBaseSizing();
+  updateCenterCardSizing();
+
+  // フローティング生成
+  const rect = cardEl.getBoundingClientRect();
+  dragOffsetX = e.clientX - rect.left;
+  dragOffsetY = e.clientY - rect.top;
+
+  const floatEl = ensureDragFloat();
+  floatEl.textContent = cardObj.label ?? '';
+  moveDragFloat(e.clientX, e.clientY);
+
+  // 見た目更新（元カードはghostにする）
+  requestAnimationFrame(() => {
+    renderCenterRow();
+    updateInsertMarkerFromIndex(insertIndex);
+    applyVisualShift();
+  });
+
+  // キャプチャ
+  dragPointerId = e.pointerId;
+  try { cardEl.setPointerCapture(dragPointerId); } catch {}
+
+  // 選択抑止
+  document.documentElement.style.userSelect = 'none';
+}
+async function finishDrag(clientX){
+  if (!draggingId || isCommitting) return;
+  isCommitting = true;
+
+  const fromId = draggingId;
+  const idx = (typeof insertIndex === 'number') ? insertIndex : calcInsertIndexFromClientX(clientX);
+
+  const arr = [...(state.centerCards || [])];
+  const fromIndex = arr.findIndex(x => x && x.id === fromId);
+  if (fromIndex < 0){
+    cleanupDrag();
+    return;
+  }
+
+  const [moved] = arr.splice(fromIndex, 1);
+  const adjustedIndex = (fromIndex < idx) ? (idx - 1) : idx;
+  arr.splice(adjustedIndex, 0, moved);
+
+  try{
+    await commitReorder(arr);
+  } finally {
+    cleanupDrag();
+  }
+}
+function cleanupDrag(){
+  draggingId = null;
+  draggingFromIndex = -1;
+  insertIndex = null;
+  frozenSizing = null;
+  rafPending = false;
+  dragPointerId = null;
+  isCommitting = false;
+
+  hideInsertMarker();
+  removeDragFloat();
+  document.documentElement.style.userSelect = '';
+
+  updateCenterCardSizing();
+  renderCenterRow();
+  applyVisualShift();
+}
+
+function renderCenterRow(){
+  updateCenterCardSizing();
+
+  const kids = [...centerRowEl.children].filter(el => el.id !== 'insertMarker');
+  kids.forEach(el => el.remove());
+
+  const cards = state.centerCards || [];
+  if (!cards.length) {
+    insertIndex = null;
+    hideInsertMarker();
+    centerRowEl.classList.remove('dragging');
+    return;
+  }
+
+  cards.forEach((c, idx) => {
+    if (draggingId && c.id === draggingId){
+      const ghost = document.createElement('div');
+      ghost.className = 'center-ghost';
+      ghost.dataset.id = c.id;
+      ghost.dataset.index = String(idx);
+      centerRowEl.appendChild(ghost);
+      return;
+    }
+
+    const el = document.createElement('div');
+    el.className = 'center-card';
+    el.textContent = c.label ?? '';
+    el.dataset.id = c.id;
+    el.dataset.index = String(idx);
+
+    /* ✅ 修正ポイント：
+       HTML5 drag&drop（dragstart/dragover/drop）はスマホで効かないので、
+       pointer events（pointerdown/move/up）でドラッグ並び替えを実装 */
+    el.addEventListener('pointerdown', (e) => {
+      // 既にドラッグ中なら無視
+      if (draggingId) return;
+      e.preventDefault();
+      beginDragFromCard(el, c, idx, e);
+    }, { passive:false });
+
+    el.addEventListener('pointermove', (e) => {
+      if (!draggingId) return;
+      if (dragPointerId !== null && e.pointerId !== dragPointerId) return;
+      e.preventDefault();
+      moveDragFloat(e.clientX, e.clientY);
+      scheduleDragOverUpdate(e.clientX);
+    }, { passive:false });
+
+    el.addEventListener('pointerup', async (e) => {
+      if (!draggingId) return;
+      if (dragPointerId !== null && e.pointerId !== dragPointerId) return;
+      e.preventDefault();
+      await finishDrag(e.clientX);
+    }, { passive:false });
+
+    el.addEventListener('pointercancel', (e) => {
+      if (!draggingId) return;
+      if (dragPointerId !== null && e.pointerId !== dragPointerId) return;
+      cleanupDrag();
+    });
+
+    // 長押しメニュー抑止（モバイル）
+    el.addEventListener('contextmenu', (e) => e.preventDefault());
+
+    centerRowEl.appendChild(el);
+  });
+
+  if (draggingId && typeof insertIndex === 'number'){
+    ensureInsertMarker();
+    updateInsertMarkerFromIndex(insertIndex);
+  } else {
+    hideInsertMarker();
+  }
+
+  applyVisualShift();
+}
+
+/* =========================
+   以降：元コードそのまま
+   ========================= */
+function generateRoomCode(length = 6){
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let code = '';
+  for(let i=0;i<length;i++) code += chars.charAt(Math.floor(Math.random()*chars.length));
+  return code;
+}
+
+async function restoreSeatFromDB(){
+  if (!state.roomCode) return;
+  const tablesRef = ref(db, `rooms/${state.roomCode}/tables`);
+  const snap = await get(tablesRef);
+  const data = snap.val() || {};
+  let mySeatIndex = null;
+
+  for (const [seatIndex, t] of Object.entries(data)) {
+    if (t && t.playerId === state.userId) {
+      mySeatIndex = Number(seatIndex);
+      break;
+    }
+  }
+  if (mySeatIndex !== null) state.seatedTable = mySeatIndex;
+}
+
+function refreshRoomLabels(){
+  if (!state.roomCode || !state.userName) return;
+  const label = state.isHost ? '（ホスト）' : '';
+  const infoText = ` ${state.roomCode},  ${state.userName}${label}`;
+  roomInfo.textContent = infoText;
+  roomInfoLobby.textContent = infoText;
+}
+function updateHostUI(){
+  refreshRoomLabels();
+  if (state.isHost){
+    hostSettingsBtn.classList.add('visible');
+  } else {
+    hostSettingsBtn.classList.remove('visible');
+    startPop.classList.add('hidden');
+  }
+
+  helpBtn.classList.add('visible');
+
+  centerRowWrap.classList.remove('hidden');
+  updateCenterCardSizing();
+}
+
+function subscribeRoom(){
+  const roomRef = ref(db, `rooms/${state.roomCode}`);
+  onValue(roomRef, snap => {
+    state.room = snap.val() || {};
+    const waiting = (!state.isHost && !state.room.maxPlayers);
+    hostSelectingPop.classList.toggle('hidden', !waiting);
+    syncSeatUI();
+  });
+}
+function subscribeHostState(){
+  const hostRef = ref(db, `rooms/${state.roomCode}/hostId`);
+  onValue(hostRef, snap => {
+    const hostId = snap.val();
+    state.isHost = (hostId === state.userId);
+    updateHostUI();
+    syncSeatUI();
+  });
+}
+
+const urlParams = new URLSearchParams(window.location.search);
+const roomFromUrl = urlParams.get('room');
+if(roomFromUrl) inputCode.value = roomFromUrl;
+
+btnJoin.addEventListener('click', async () => {
+  state.userName = inputName.value || '名無し';
+  state.roomCode = inputCode.value.trim() || generateRoomCode();
+
+  await set(ref(db, `rooms/${state.roomCode}/users/${state.userId}`), {
+    name: state.userName,
+    joinedAt: Date.now()
+  });
+
+  const roomRef = ref(db, `rooms/${state.roomCode}`);
+  const roomSnap = await get(roomRef);
+  const roomData = roomSnap.val();
+
+  if(!roomData || !roomData.hostId){
+    await update(roomRef, { hostId: state.userId });
+    state.isHost = true;
+  } else {
+    state.isHost = (roomData.hostId === state.userId);
+  }
+
+  updateHostUI();
+
+  mainEl.classList.remove('prejoin');
+  mainEl.classList.add('joined');
+
+  joinBox.classList.add('hidden');
+  lobby.classList.remove('hidden');
+  lobby.classList.add('entered');
+
+  await restoreSeatFromDB();
+
+  subscribeRoom();
+  subscribeHostState();
+  subscribePlayers();
+  subscribeCenterCards();
+
+  updateCenterCardSizing();
+  syncSeatUI();
+});
+
+copyLinkBtn.addEventListener('click', async () => {
+  const url = `${location.origin}${location.pathname}?room=${state.roomCode}`;
+  try {
+    await navigator.clipboard.writeText(url);
+    copyLinkBtn.classList.add('copied');
+    copyLinkBtn.textContent = 'COPIED';
+    inputCode.value = state.roomCode;
+    setTimeout(()=>{
+      copyLinkBtn.classList.remove('copied');
+      copyLinkBtn.textContent='COPY';
+    },1500);
+  } catch {
+    prompt('コピーできません。手動でコピーしてください', url);
+  }
+});
+
+async function syncSeatUI(){
+  if (!state.roomCode) return;
+
+  const maxPlayers = state.room.maxPlayers || null;
+
+  if (!state.isHost && !maxPlayers){
+    seatPop.classList.add('hidden');
+    return;
+  }
+  if (state.seatedTable !== null){
+    seatPop.classList.add('hidden');
+    return;
+  }
+  await renderSeatTabs();
+  seatPop.classList.remove('hidden');
+}
+
+async function renderSeatTabs(){
+  if (!state.roomCode) return;
+  if (isRenderingSeatTabs) return;
+  isRenderingSeatTabs = true;
+
+  try {
+    seatTabs.innerHTML = '';
+
+    const roomRef = ref(db, `rooms/${state.roomCode}`);
+    const roomSnap = await get(roomRef);
+    const roomData = roomSnap.val() || {};
+    const maxPlayers = roomData.maxPlayers || null;
+
+    if(state.isHost && !maxPlayers){
+      seatLabel.textContent = '人数を選択';
+      for(let i=2; i<=8; i++){
+        const tab = document.createElement('div');
+        tab.className = 'tab';
+        tab.textContent = i;
+
+        tab.onclick = async () => {
+          await update(roomRef, { maxPlayers: i });
+          const tRef = ref(db, `rooms/${state.roomCode}/tables/1`);
+          await set(tRef, { playerId: state.userId, playerName: state.userName });
+
+          state.seatedTable = 1;
+          seatPop.classList.add('hidden');
+        };
+        seatTabs.appendChild(tab);
+      }
+      return;
+    }
+
+    seatLabel.textContent = '席を選択';
+
+    const effectiveMax = maxPlayers || 8;
+    const tablesSnap = await get(ref(db, `rooms/${state.roomCode}/tables`));
+    const tables = tablesSnap.val() || {};
+
+    for(let i=1; i<=effectiveMax; i++){
+      const tab = document.createElement('div');
+      tab.className = 'tab';
+      tab.textContent = i;
+
+      const t = tables[i];
+      if(t && t.playerId) tab.classList.add('disabled');
+
+      tab.onclick = async () => {
+        if(tab.classList.contains('disabled')) return;
+        const tRef = ref(db, `rooms/${state.roomCode}/tables/${i}`);
+        await set(tRef, { playerId: state.userId, playerName: state.userName });
+        state.seatedTable = i;
+        seatPop.classList.add('hidden');
+      };
+      seatTabs.appendChild(tab);
+    }
+  } finally {
+    isRenderingSeatTabs = false;
+  }
+}
+
+btnSeatCancel.onclick = () => {
+  seatPop.classList.add('hidden');
+  state.seatedTable = null;
+};
+
+function subscribePlayers(){
+  const tablesRef = ref(db, `rooms/${state.roomCode}/tables`);
+  onValue(tablesRef, async snap => {
+    const data = snap.val() || {};
+    const players = Object.entries(data)
+      .map(([seatIndex, t]) => (t && t.playerId ? {
+        id: t.playerId,
+        name: t.playerName || '名無し',
+        seatIndex: Number(seatIndex)
+      } : null))
+      .filter(Boolean)
+      .sort((a,b) => a.seatIndex - b.seatIndex);
+
+    latestPlayers = players;
+
+    const mySeat = players.find(p => p.id === state.userId);
+    if (mySeat && state.seatedTable === null) {
+      state.seatedTable = mySeat.seatIndex;
+      seatPop.classList.add('hidden');
+    }
+
+    const meStillSeated = players.some(p => p.id === state.userId);
+    if (!meStillSeated && state.seatedTable !== null) {
+      state.seatedTable = null;
+    }
+
+    await syncSeatUI();
+    renderPlayerCircle(players);
+  });
+}
+
+function renderPlayerCircle(players){
+  playerCircle.innerHTML = '';
+  if (!players.length) return;
+
+  const n = players.length;
+  const radius = 45;
+  const step = (2 * Math.PI) / n;
+  const anchorAngle = Math.PI / 2;
+  const meIndex = players.findIndex(p => p.id === state.userId);
+
+  players.forEach((p, idx) => {
+    const k = (meIndex === -1) ? idx : (idx - meIndex + n) % n;
+    const angle = anchorAngle + step * k;
+
+    const x = 50 + radius * Math.cos(angle);
+    const y = 50 + radius * Math.sin(angle);
+
+    const tag = document.createElement('div');
+    tag.className = 'player-tag' + (p.id === state.userId ? ' me' : '');
+    tag.textContent = p.name;
+    tag.style.left = `${x}%`;
+    tag.style.top = `${y}%`;
+
+    tag.onclick = () => {
+      if (p.id === state.userId) return;
+      if (!state.roomCode) return;
+      if (state.seatedTable !== null) return;
+
+      pendingSeatIndexToSteal = p.seatIndex;
+      pendingSeatPlayerIdToSteal = p.id;
+      kickMessage.textContent = `「${p.name}」を追い出して、この席に着席しますか？`;
+      kickDialog.classList.remove('hidden');
+    };
+
+    playerCircle.appendChild(tag);
+  });
+}
+
+kickDialog.addEventListener('click', (e) => {
+  if (e.target === kickDialog) {
+    kickDialog.classList.add('hidden');
+    pendingSeatIndexToSteal = null;
+    pendingSeatPlayerIdToSteal = null;
+  }
+});
+btnKickNo.addEventListener('click', (e) => {
+  e.stopPropagation();
+  kickDialog.classList.add('hidden');
+  pendingSeatIndexToSteal = null;
+  pendingSeatPlayerIdToSteal = null;
+});
+btnKickYes.addEventListener('click', async (e) => {
+  e.stopPropagation();
+  if (pendingSeatIndexToSteal == null || !state.roomCode) {
+    kickDialog.classList.add('hidden');
+    return;
+  }
+
+  const seatIndex = pendingSeatIndexToSteal;
+  const roomRef = ref(db, `rooms/${state.roomCode}`);
+  const roomSnap = await get(roomRef);
+  const roomData = roomSnap.val() || {};
+
+  const tRef = ref(db, `rooms/${state.roomCode}/tables/${seatIndex}`);
+  await set(tRef, { playerId: state.userId, playerName: state.userName || '名無し' });
+
+  if (roomData.hostId && pendingSeatPlayerIdToSteal && roomData.hostId === pendingSeatPlayerIdToSteal) {
+    await update(roomRef, { hostId: state.userId });
+  }
+
+  state.seatedTable = seatIndex;
+
+  kickDialog.classList.add('hidden');
+  pendingSeatIndexToSteal = null;
+  pendingSeatPlayerIdToSteal = null;
+
+  seatPop.classList.add('hidden');
+});
+
+function buildDefaultCenterCards(){
+  return Array.from({length:10}).map((_,i)=>({
+    id: crypto.randomUUID(),
+    label: String(i+1)
+  }));
+}
+
+hostSettingsBtn.addEventListener('click', () => {
+  if (!state.isHost) return;
+  startPop.classList.toggle('hidden');
+});
+btnStartPopClose.addEventListener('click', () => {
+  startPop.classList.add('hidden');
+});
+
+btnGameStart.addEventListener('click', async () => {
+  if (!state.isHost || !state.roomCode) return;
+
+  const ccRef = ref(db, `rooms/${state.roomCode}/centerCards`);
+  const snap = await get(ccRef);
+  const existing = snap.val();
+
+  if (!existing){
+    await set(ccRef, buildDefaultCenterCards());
+  }
+
+  startPop.classList.add('hidden');
+});
+
+btnResetRoom.addEventListener('click', async () => {
+  if (!state.isHost || !state.roomCode) return;
+
+  const base = `rooms/${state.roomCode}`;
+  await Promise.all([
+    remove(ref(db, `${base}/maxPlayers`)),
+    remove(ref(db, `${base}/tables`)),
+    remove(ref(db, `${base}/centerCards`))
+  ]);
+
+  state.seatedTable = null;
+  startPop.classList.add('hidden');
+  await syncSeatUI();
+
+  updateCenterCardSizing();
+});
+</script>
+
+</body>
+</html>
