@@ -833,6 +833,28 @@ function cleanupDrag(){
   applyVisualShift();
 }
 
+/* ✅ 画面全体で追跡：タッチ時にカード要素外へ指が出てもドラッグを継続 */
+window.addEventListener('pointermove', (e) => {
+  if (!draggingId) return;
+  if (dragPointerId !== null && e.pointerId !== dragPointerId) return;
+  e.preventDefault();
+  moveDragFloat(e.clientX, e.clientY);
+  scheduleDragOverUpdate(e.clientX);
+}, { passive:false });
+
+window.addEventListener('pointerup', async (e) => {
+  if (!draggingId) return;
+  if (dragPointerId !== null && e.pointerId !== dragPointerId) return;
+  e.preventDefault();
+  await finishDrag(e.clientX);
+}, { passive:false });
+
+window.addEventListener('pointercancel', (e) => {
+  if (!draggingId) return;
+  if (dragPointerId !== null && e.pointerId !== dragPointerId) return;
+  cleanupDrag();
+});
+
 function renderCenterRow(){
   updateCenterCardSizing();
 
@@ -872,27 +894,6 @@ function renderCenterRow(){
       e.preventDefault();
       beginDragFromCard(el, c, idx, e);
     }, { passive:false });
-
-    el.addEventListener('pointermove', (e) => {
-      if (!draggingId) return;
-      if (dragPointerId !== null && e.pointerId !== dragPointerId) return;
-      e.preventDefault();
-      moveDragFloat(e.clientX, e.clientY);
-      scheduleDragOverUpdate(e.clientX);
-    }, { passive:false });
-
-    el.addEventListener('pointerup', async (e) => {
-      if (!draggingId) return;
-      if (dragPointerId !== null && e.pointerId !== dragPointerId) return;
-      e.preventDefault();
-      await finishDrag(e.clientX);
-    }, { passive:false });
-
-    el.addEventListener('pointercancel', (e) => {
-      if (!draggingId) return;
-      if (dragPointerId !== null && e.pointerId !== dragPointerId) return;
-      cleanupDrag();
-    });
 
     // 長押しメニュー抑止（モバイル）
     el.addEventListener('contextmenu', (e) => e.preventDefault());
