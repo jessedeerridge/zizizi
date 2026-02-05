@@ -552,6 +552,7 @@ let dragFloatEl = null;
 let dragOffsetX = 0;
 let dragOffsetY = 0;
 let isCommitting = false;
+let dragSourceEl = null;
 
 function clamp(n, min, max){ return Math.max(min, Math.min(max, n)); }
 
@@ -764,6 +765,7 @@ function beginDragFromCard(cardEl, cardObj, idx, e){
   draggingFromIndex = idx;
   insertIndex = idx;
   isCommitting = false;
+  dragSourceEl = cardEl;
 
   frozenSizing = computeBaseSizing();
   updateCenterCardSizing();
@@ -791,6 +793,32 @@ function beginDragFromCard(cardEl, cardObj, idx, e){
   // 選択抑止
   document.documentElement.style.userSelect = 'none';
 }
+
+function handleDraggingPointerMove(e){
+  if (!draggingId) return;
+  if (dragPointerId !== null && e.pointerId !== dragPointerId) return;
+  e.preventDefault();
+  moveDragFloat(e.clientX, e.clientY);
+  scheduleDragOverUpdate(e.clientX);
+}
+
+async function handleDraggingPointerUp(e){
+  if (!draggingId) return;
+  if (dragPointerId !== null && e.pointerId !== dragPointerId) return;
+  e.preventDefault();
+  await finishDrag(e.clientX);
+}
+
+function handleDraggingPointerCancel(e){
+  if (!draggingId) return;
+  if (dragPointerId !== null && e.pointerId !== dragPointerId) return;
+  cleanupDrag();
+}
+
+window.addEventListener('pointermove', handleDraggingPointerMove, { passive:false });
+window.addEventListener('pointerup', handleDraggingPointerUp, { passive:false });
+window.addEventListener('pointercancel', handleDraggingPointerCancel, { passive:false });
+
 async function finishDrag(clientX){
   if (!draggingId || isCommitting) return;
   isCommitting = true;
@@ -816,12 +844,19 @@ async function finishDrag(clientX){
   }
 }
 function cleanupDrag(){
+  const prevPointerId = dragPointerId;
+
   draggingId = null;
   draggingFromIndex = -1;
   insertIndex = null;
   frozenSizing = null;
   rafPending = false;
+
+  if (dragSourceEl && prevPointerId !== null && dragSourceEl.hasPointerCapture?.(prevPointerId)){
+    try { dragSourceEl.releasePointerCapture(prevPointerId); } catch {}
+  }
   dragPointerId = null;
+  dragSourceEl = null;
   isCommitting = false;
 
   hideInsertMarker();
@@ -872,27 +907,6 @@ function renderCenterRow(){
       e.preventDefault();
       beginDragFromCard(el, c, idx, e);
     }, { passive:false });
-
-    el.addEventListener('pointermove', (e) => {
-      if (!draggingId) return;
-      if (dragPointerId !== null && e.pointerId !== dragPointerId) return;
-      e.preventDefault();
-      moveDragFloat(e.clientX, e.clientY);
-      scheduleDragOverUpdate(e.clientX);
-    }, { passive:false });
-
-    el.addEventListener('pointerup', async (e) => {
-      if (!draggingId) return;
-      if (dragPointerId !== null && e.pointerId !== dragPointerId) return;
-      e.preventDefault();
-      await finishDrag(e.clientX);
-    }, { passive:false });
-
-    el.addEventListener('pointercancel', (e) => {
-      if (!draggingId) return;
-      if (dragPointerId !== null && e.pointerId !== dragPointerId) return;
-      cleanupDrag();
-    });
 
     // 長押しメニュー抑止（モバイル）
     el.addEventListener('contextmenu', (e) => e.preventDefault());
