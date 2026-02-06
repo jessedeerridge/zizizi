@@ -1023,12 +1023,7 @@ let chipHoverCardId = null;
 
 let chipHoverInCircle = false;
 
-let chipLastClientX = null;
-let chipLastClientY = null;
-let chipCenterX = null;
-let chipCenterY = null;
-let chipLastCenterX = null;
-let chipLastCenterY = null;
+let chipDragState = null;
 
 let circlePushRaf = false;
 let circlePushQueued = null;
@@ -1281,8 +1276,8 @@ function circleParams(){
 }
 
 function currentDragChipCenter(clientX, clientY){
-  if (Number.isFinite(chipCenterX) && Number.isFinite(chipCenterY)){
-    return { x: chipCenterX, y: chipCenterY };
+  if (chipDragState && Number.isFinite(chipDragState.centerX) && Number.isFinite(chipDragState.centerY)){
+    return { x: chipDragState.centerX, y: chipDragState.centerY };
   }
   const left = clientX - chipDragOffsetX;
   const top  = clientY - chipDragOffsetY;
@@ -1419,8 +1414,8 @@ function resolveCirclePushWhileDragging(clientX, clientY){
   const dragCenter = currentDragChipCenter(clientX, clientY);
   if (!pointInsideCircle(dragCenter.x, dragCenter.y)) return;
 
-  const prevX = (chipLastCenterX ?? dragCenter.x);
-  const prevY = (chipLastCenterY ?? dragCenter.y);
+  const prevX = (chipDragState?.lastCenterX ?? dragCenter.x);
+  const prevY = (chipDragState?.lastCenterY ?? dragCenter.y);
   const dragDir = { x: dragCenter.x - prevX, y: dragCenter.y - prevY };
 
   const chips = getCircleChipsAsArray();
@@ -1678,8 +1673,10 @@ function moveChipFloat(clientX, clientY){
   const x = clientX - chipDragOffsetX;
   const y = clientY - chipDragOffsetY;
   chipFloatEl.style.transform = `translate(${x}px, ${y}px)`;
-  chipCenterX = x + 13;
-  chipCenterY = y + 13;
+  if (chipDragState){
+    chipDragState.centerX = x + 13;
+    chipDragState.centerY = y + 13;
+  }
 }
 
 function setChipDragHints(_on){}
@@ -1719,9 +1716,6 @@ function beginChipDrag(sourceDotEl, info, e){
   chipHoverCardId = null;
   chipHoverInCircle = false;
 
-  chipLastClientX = e.clientX;
-  chipLastClientY = e.clientY;
-
   sourceDotEl.classList.add('dragging-hide');
 
   const floatEl = ensureChipFloat();
@@ -1735,9 +1729,10 @@ function beginChipDrag(sourceDotEl, info, e){
   const rect = sourceDotEl.getBoundingClientRect();
   chipDragOffsetX = e.clientX - rect.left;
   chipDragOffsetY = e.clientY - rect.top;
+  chipDragState = { centerX: null, centerY: null, lastCenterX: null, lastCenterY: null };
   moveChipFloat(e.clientX, e.clientY);
-  chipLastCenterX = chipCenterX;
-  chipLastCenterY = chipCenterY;
+  chipDragState.lastCenterX = chipDragState.centerX;
+  chipDragState.lastCenterY = chipDragState.centerY;
 
   setChipDragHints(true);
   updateChipHover(e.clientX, e.clientY);
@@ -1759,12 +1754,7 @@ function cancelChipDrag(){
   chipHoverCardId = null;
   chipHoverInCircle = false;
 
-  chipLastClientX = null;
-  chipLastClientY = null;
-  chipCenterX = null;
-  chipCenterY = null;
-  chipLastCenterX = null;
-  chipLastCenterY = null;
+  chipDragState = null;
 
   setChipDragHints(false);
   removeChipFloat();
@@ -1916,12 +1906,7 @@ async function finishChipDrag(lastClientX, lastClientY){
     chipHoverCardId = null;
     chipHoverInCircle = false;
 
-    chipLastClientX = null;
-    chipLastClientY = null;
-    chipCenterX = null;
-    chipCenterY = null;
-    chipLastCenterX = null;
-    chipLastCenterY = null;
+    chipDragState = null;
 
     setChipDragHints(false);
     removeChipFloat();
@@ -1938,10 +1923,10 @@ window.addEventListener('pointermove', (e) => {
   resolveCirclePushWhileDragging(e.clientX, e.clientY);
   updateChipHover(e.clientX, e.clientY);
 
-  chipLastClientX = e.clientX;
-  chipLastClientY = e.clientY;
-  chipLastCenterX = chipCenterX;
-  chipLastCenterY = chipCenterY;
+  if (chipDragState){
+    chipDragState.lastCenterX = chipDragState.centerX;
+    chipDragState.lastCenterY = chipDragState.centerY;
+  }
 }, { passive:false });
 
 window.addEventListener('pointerup', async (e) => {
