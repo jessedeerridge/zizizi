@@ -1818,23 +1818,35 @@ async function finishChipDrag(lastClientX, lastClientY){
 
   const dropCardId = chipHoverCardId;
   const dropInCircle = !!chipHoverInCircle;
-  const srcEl = chipDragging.sourceEl;
+  const dragInfo = chipDragging;
+  const srcEl = dragInfo.sourceEl;
 
   if (!dropCardId && !dropInCircle){
     cancelChipDrag();
     return;
   }
 
-  if (!canIPlaceChipNow(chipDragging)){
+  if (!canIPlaceChipNow(dragInfo)){
     cancelChipDrag();
     return;
   }
 
   const myTurnSeq = Number(state.game?.turnSeq || 0);
 
+  releaseChipPointerCapture();
+  chipDragging = null;
+  chipPointerId = null;
+  chipHoverCardId = null;
+  chipHoverInCircle = false;
+  chipLastClientX = null;
+  chipLastClientY = null;
+  setChipDragHints(false);
+  removeChipFloat();
+  document.documentElement.style.userSelect = '';
+
   try{
     if (dropInCircle){
-      await commitChipToCircleMarkPlaced(chipDragging, lastClientX, lastClientY);
+      await commitChipToCircleMarkPlaced(dragInfo, lastClientX, lastClientY);
 
       if (srcEl){
         srcEl.classList.remove('dragging-hide');
@@ -1863,13 +1875,13 @@ async function finishChipDrag(lastClientX, lastClientY){
 
     const cardObj = (state.centerCards || []).find(x => x && x.id === dropCardId);
     if (!cardObj){
-      cancelChipDrag();
+      if (srcEl) srcEl.classList.remove('dragging-hide');
       return;
     }
 
     lockMoveFor(1200, cardObj.id);
 
-    await commitChipPlacementAndMarkTurnPlaced(cardObj, chipDragging);
+    await commitChipPlacementAndMarkTurnPlaced(cardObj, dragInfo);
 
     if (srcEl){
       srcEl.classList.remove('dragging-hide');
@@ -1878,20 +1890,9 @@ async function finishChipDrag(lastClientX, lastClientY){
 
     openZoom(String(cardObj.label ?? ''), { autoCloseMs: 1200, force: true });
 
-  } finally {
-    releaseChipPointerCapture();
-
-    chipDragging = null;
-    chipPointerId = null;
-    chipHoverCardId = null;
-    chipHoverInCircle = false;
-
-    chipLastClientX = null;
-    chipLastClientY = null;
-
-    setChipDragHints(false);
-    removeChipFloat();
-    document.documentElement.style.userSelect = '';
+  } catch (err) {
+    if (srcEl) srcEl.classList.remove('dragging-hide');
+    throw err;
   }
 }
 
