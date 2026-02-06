@@ -1414,8 +1414,8 @@ function resolveCirclePushWhileDragging(clientX, clientY){
   if (topRightCircle.classList.contains('hidden')) return;
 
   const params = circleParams();
-  if (!pointInsideCircle(clientX, clientY)) return;
-  const dragCenter = dragChipCenterFromClient(clientX, clientY);
+  const dragCenter = currentDragChipCenter(clientX, clientY);
+  if (!pointInsideCircle(dragCenter.x, dragCenter.y)) return;
 
   const prevX = (chipLastClientX ?? clientX);
   const prevY = (chipLastClientY ?? clientY);
@@ -1761,12 +1761,11 @@ function cancelChipDrag(){
   document.documentElement.style.userSelect = '';
 }
 
-async function commitChipToCircleMarkPlaced(info, clientX, clientY){
+async function commitChipToCircleMarkPlaced(info, dragCenter){
   if (!state.roomCode) return;
 
   const params = circleParams();
   const { g, maxR } = params;
-  const dragCenter = currentDragChipCenter(clientX, clientY);
 
   let seedX = dragCenter.x - g.cx;
   let seedY = dragCenter.y - g.cy;
@@ -1837,7 +1836,8 @@ async function finishChipDrag(lastClientX, lastClientY){
   if (!chipDragging) return;
 
   const dropCardId = chipHoverCardId;
-  const dropInCircle = !!chipHoverInCircle;
+  const finalCenter = currentDragChipCenter(lastClientX, lastClientY);
+  const dropInCircle = pointInsideCircle(finalCenter.x, finalCenter.y);
   const srcEl = chipDragging.sourceEl;
 
   if (!dropCardId && !dropInCircle){
@@ -1854,7 +1854,7 @@ async function finishChipDrag(lastClientX, lastClientY){
 
   try{
     if (dropInCircle){
-      await commitChipToCircleMarkPlaced(chipDragging, lastClientX, lastClientY);
+      await commitChipToCircleMarkPlaced(chipDragging, finalCenter);
 
       if (srcEl){
         srcEl.classList.remove('dragging-hide');
