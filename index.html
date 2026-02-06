@@ -1760,34 +1760,20 @@ async function commitChipToCircleMarkPlaced(info, clientX, clientY){
   seedY = seeded.y;
 
   const chipKey = `${info.ownerId}_${info.type}`;
-  const chips = getCircleChipsAsArray().filter(c => c.key !== chipKey);
 
-  const chipR = 13;
-  const minDist = chipR*2 + 1.5;
-  for (const c of chips){
-    const dx = c.x - seedX;
-    const dy = c.y - seedY;
-    const fallbackAngle = Math.atan2(c.y, c.x);
-    const { nx, ny, d } = separationUnit(dx, dy, fallbackAngle);
-    if (d < minDist){
-      const overlap = (minDist - d) + 1.0;
-      c.x += nx * overlap;
-      c.y += ny * overlap;
-      const clamped = clampToCircle(c.x, c.y, maxR);
-      c.x = clamped.x;
-      c.y = clamped.y;
-    }
-  }
-  relaxCircleOverlaps(chips, params);
+  // ドロップ確定時は既存チップを追加で押し出さない（張り付き感の抑制）
+  // 直前のドラッグ中に積まれた押し出しパッチだけを取り込む。
+  const queuedPush = circlePushQueued;
+  circlePushQueued = null;
 
   const baseRef = ref(db, `rooms/${state.roomCode}`);
   const idx0 = (Number(info.type) || 1) - 1;
 
   const patch = {};
-  for (const c of chips){
-    const old = state.circleChips?.[c.key];
-    if (!old) continue;
-    patch[`circleChips/${c.key}`] = { ...old, x: c.x, y: c.y };
+  if (queuedPush){
+    for (const [k,v] of Object.entries(queuedPush)){
+      patch[`circleChips/${k}`] = v;
+    }
   }
   patch[`circleChips/${chipKey}`] = {
     ownerId: info.ownerId,
