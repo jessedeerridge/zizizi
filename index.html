@@ -1257,6 +1257,11 @@ function pointInsideCircle(clientX, clientY){
   return (dx*dx + dy*dy) <= Math.pow(radius - 4, 2);
 }
 function updateCircleHover(x,y){
+  if (chipDragging){
+    const dragCenter = dragChipCenterFromClient(x, y);
+    chipHoverInCircle = pointInsideCircle(dragCenter.x, dragCenter.y);
+    return;
+  }
   chipHoverInCircle = pointInsideCircle(x,y);
 }
 
@@ -1404,8 +1409,8 @@ function resolveCirclePushWhileDragging(clientX, clientY){
   if (topRightCircle.classList.contains('hidden')) return;
 
   const params = circleParams();
-  if (!pointInsideCircle(clientX, clientY)) return;
   const dragCenter = dragChipCenterFromClient(clientX, clientY);
+  if (!pointInsideCircle(dragCenter.x, dragCenter.y)) return;
 
   const prevX = (chipLastClientX ?? clientX);
   const prevY = (chipLastClientY ?? clientY);
@@ -1718,9 +1723,8 @@ function beginChipDrag(sourceDotEl, info, e){
   floatEl.style.borderColor = ((info.colorKey || '') === 'white') ? 'rgba(0,0,0,.35)' : 'rgba(0,0,0,.25)';
   floatEl.appendChild(makeChipShapeEl(info.type));
 
-  const rect = sourceDotEl.getBoundingClientRect();
-  chipDragOffsetX = e.clientX - rect.left;
-  chipDragOffsetY = e.clientY - rect.top;
+  chipDragOffsetX = 13;
+  chipDragOffsetY = 13;
   moveChipFloat(e.clientX, e.clientY);
 
   setChipDragHints(true);
