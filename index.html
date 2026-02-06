@@ -1161,9 +1161,6 @@ function renderCircleChips(){
   const margin = 6;
   const maxR = (size/2) - chipR - margin;
 
-  const lp = state.game?.lastPlacement || null;
-  const turnPid = state.game?.turnPlayerId || null;
-
   const items = Object.entries(state.circleChips || {})
     .map(([k,v]) => ({ key:k, ...(v||{}) }))
     .filter(x => x && x.ownerId && x.type && typeof x.x === 'number' && typeof x.y === 'number')
@@ -1177,12 +1174,6 @@ function renderCircleChips(){
     el.style.color = fg;
     el.style.borderColor = ((it.colorKey || '') === 'white') ? 'rgba(0,0,0,.35)' : 'rgba(0,0,0,.25)';
     el.appendChild(makeChipShapeEl(Number(it.type) || 1));
-
-    if (turnPid && lp && state.game?.started && String(lp.cardId) === '__circle__' && lp.playerId === turnPid){
-      const near = Math.abs((it.placedAt||0) - (lp.at||0)) <= 5000;
-      if (it.ownerId === turnPid && near) el.classList.add('turn-pulsing');
-    }
-
     const x = clamp(it.x, -maxR, maxR);
     const y = clamp(it.y, -maxR, maxR);
 
