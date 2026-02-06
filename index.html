@@ -1757,8 +1757,10 @@ async function commitChipToCircleMarkPlaced(info, clientX, clientY){
   const params = circleParams();
   const { g, maxR } = params;
 
-  let seedX = clientX - g.cx;
-  let seedY = clientY - g.cy;
+  const dragCenter = dragChipCenterFromClient(clientX, clientY);
+
+  let seedX = dragCenter.x - g.cx;
+  let seedY = dragCenter.y - g.cy;
   const seeded = clampToCircle(seedX, seedY, maxR);
   seedX = seeded.x; seedY = seeded.y;
 
