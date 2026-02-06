@@ -1404,9 +1404,37 @@ function scheduleCommitCirclePush(patch){
 }
 
 function resolveCirclePushWhileDragging(clientX, clientY){
-  // ドラッグ中チップは、このターンで配置する同一チップ。
-  // 接触押し出しで既存チップ位置を動かすと、見た目位置と最終配置がぶれるため無効化する。
-  return;
+  if (!chipDragging) return;
+  if (!state.roomCode) return;
+  if (topRightCircle.classList.contains("hidden")) return;
+
+  const params = circleParams();
+  const dragCenter = dragChipCenterFromClient(clientX, clientY);
+  if (!pointInsideCircle(dragCenter.x, dragCenter.y)) return;
+
+  const prevX = (chipLastClientX ?? clientX);
+  const prevY = (chipLastClientY ?? clientY);
+  const dragDir = { x: clientX - prevX, y: clientY - prevY };
+
+  const draggingKey = `${chipDragging.ownerId}_${chipDragging.type}`;
+  const chips = getCircleChipsAsArray().filter(c => c.key !== draggingKey);
+  if (!chips.length) return;
+
+  const hit = applyDragPushImpulse(chips, dragCenter, dragDir, params);
+  const relaxed = relaxCircleOverlaps(chips, params);
+  if (!hit && !relaxed) return;
+
+  const patch = {};
+  for (const c of chips){
+    const old = state.circleChips?.[c.key];
+    if (!old) continue;
+    const dx = (c.x - (old.x ?? 0));
+    const dy = (c.y - (old.y ?? 0));
+    if ((dx*dx + dy*dy) > 0.3){
+      patch[c.key] = { ...old, x: c.x, y: c.y };
+    }
+  }
+  scheduleCommitCirclePush(patch);
 }
 
 /* =========================================================
@@ -1730,7 +1758,8 @@ function cancelChipDrag(){
 async function commitChipToCircleMarkPlaced(info, clientX, clientY){
   if (!state.roomCode) return;
 
-  const { g, maxR } = circleParams();
+  const params = circleParams();
+  const { g, maxR } = params;
   const dragCenter = dragChipCenterFromClient(clientX, clientY);
 
   let seedX = dragCenter.x - g.cx;
@@ -1739,11 +1768,36 @@ async function commitChipToCircleMarkPlaced(info, clientX, clientY){
   seedX = seeded.x;
   seedY = seeded.y;
 
-  const baseRef = ref(db, `rooms/${state.roomCode}`);
   const chipKey = `${info.ownerId}_${info.type}`;
+  const chips = getCircleChipsAsArray().filter(c => c.key !== chipKey);
+
+  const chipR = 13;
+  const minDist = chipR*2 + 1.5;
+  for (const c of chips){
+    const dx = c.x - seedX;
+    const dy = c.y - seedY;
+    const fallbackAngle = Math.atan2(c.y, c.x);
+    const { nx, ny, d } = separationUnit(dx, dy, fallbackAngle);
+    if (d < minDist){
+      const overlap = (minDist - d) + 1.0;
+      c.x += nx * overlap;
+      c.y += ny * overlap;
+      const clamped = clampToCircle(c.x, c.y, maxR);
+      c.x = clamped.x;
+      c.y = clamped.y;
+    }
+  }
+  relaxCircleOverlaps(chips, params);
+
+  const baseRef = ref(db, `rooms/${state.roomCode}`);
   const idx0 = (Number(info.type) || 1) - 1;
 
   const patch = {};
+  for (const c of chips){
+    const old = state.circleChips?.[c.key];
+    if (!old) continue;
+    patch[`circleChips/${c.key}`] = { ...old, x: c.x, y: c.y };
+  }
   patch[`circleChips/${chipKey}`] = {
     ownerId: info.ownerId,
     type: info.type,
