@@ -1290,15 +1290,22 @@ function clampToCircle(x, y, maxR){
   return { x: x*s, y: y*s };
 }
 
+function separationUnit(dx, dy, fallbackAngle = 0){
+  const d = Math.hypot(dx, dy);
+  if (d > 0.0001){
+    return { nx: dx / d, ny: dy / d, d };
+  }
+  return { nx: Math.cos(fallbackAngle), ny: Math.sin(fallbackAngle), d: 0.000001 };
+}
+
 function separatePair(a, b, minDist){
   const dx = a.x - b.x;
   const dy = a.y - b.y;
-  const d = Math.hypot(dx,dy) || 0.000001;
+  const fallbackAngle = ((a.x + b.x + a.y + b.y) * 0.17);
+  const { nx, ny, d } = separationUnit(dx, dy, fallbackAngle);
   if (d >= minDist) return false;
 
   const overlap = (minDist - d);
-  const nx = dx / d;
-  const ny = dy / d;
 
   const push = overlap * 0.5;
   a.x += nx * push;
@@ -1312,35 +1319,24 @@ function applyDragPushImpulse(chips, dragCenter, dragDir, params){
   const { g, chipR, maxR } = params;
   const minDist = chipR*2 + 1.5;
 
-  let dirX = dragDir.x, dirY = dragDir.y;
-  const dirLen = Math.hypot(dirX, dirY);
-  if (dirLen < 0.5){
-    const fallbackX = dragCenter.x - g.cx;
-    const fallbackY = dragCenter.y - g.cy;
-    const fl = Math.hypot(fallbackX, fallbackY) || 0.000001;
-    dirX = fallbackX / fl;
-    dirY = fallbackY / fl;
-  } else {
-    dirX /= dirLen;
-    dirY /= dirLen;
-  }
-
   let any = false;
 
-  for (const c of chips){
+  for (let i=0; i<chips.length; i++){
+    const c = chips[i];
     const cx = g.cx + c.x;
     const cy = g.cy + c.y;
 
     const dx = cx - dragCenter.x;
     const dy = cy - dragCenter.y;
-    const d = Math.hypot(dx,dy) || 0.000001;
+    const fallbackAngle = Math.atan2(c.y, c.x) || (i * 0.9);
+    const { nx, ny, d } = separationUnit(dx, dy, fallbackAngle);
 
     if (d < minDist){
       const overlap = (minDist - d);
       const push = overlap + 0.8;
 
-      c.x += dirX * push;
-      c.y += dirY * push;
+      c.x += nx * push;
+      c.y += ny * push;
 
       const clamped = clampToCircle(c.x, c.y, maxR);
       c.x = clamped.x; c.y = clamped.y;
@@ -1408,6 +1404,7 @@ function resolveCirclePushWhileDragging(clientX, clientY){
   if (topRightCircle.classList.contains('hidden')) return;
 
   const params = circleParams();
+  if (!pointInsideCircle(clientX, clientY)) return;
   const dragCenter = dragChipCenterFromClient(clientX, clientY);
 
   const prevX = (chipLastClientX ?? clientX);
@@ -1773,11 +1770,10 @@ async function commitChipToCircleMarkPlaced(info, clientX, clientY){
   for (const c of chips){
     const dx = c.x - seedX;
     const dy = c.y - seedY;
-    const d = Math.hypot(dx,dy) || 0.000001;
+    const fallbackAngle = Math.atan2(c.y, c.x);
+    const { nx, ny, d } = separationUnit(dx, dy, fallbackAngle);
     if (d < minDist){
       const overlap = (minDist - d) + 1.0;
-      const nx = dx / d;
-      const ny = dy / d;
       c.x += nx * overlap;
       c.y += ny * overlap;
       const clamped = clampToCircle(c.x, c.y, maxR);
