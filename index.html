@@ -1027,8 +1027,10 @@ let chipLastClientX = null;
 let chipLastClientY = null;
 
 let circlePushRaf = false;
+let circlePushRafId = null;
 let circlePushQueued = null;
 let circlePushLastCommitAt = 0;
+let circleChipOptimisticUntil = {}; // { chipKey: expiresAtMs }
 
 function clamp(n, min, max){ return Math.max(min, Math.min(max, n)); }
 
@@ -1151,6 +1153,33 @@ function subscribeCircleChips(){
 function clearCircleChipsDom(){
   topRightCircle.querySelectorAll('.circle-chip').forEach(el => el.remove());
 }
+
+function circleChipActiveKeySet(){
+  const set = new Set();
+  for (const p of (state.players || [])){
+    if (!p || !p.id) continue;
+    const used = (Array.isArray(p.chipUsed) && p.chipUsed.length === 4) ? p.chipUsed : [false,false,false,false];
+    for (let idx0=0; idx0<4; idx0++){
+      if (used[idx0]) set.add(`${p.id}_${idx0+1}`);
+    }
+  }
+  return set;
+}
+
+function circleChipRenderableKeySet(){
+  const set = circleChipActiveKeySet();
+  const now = Date.now();
+
+  for (const [k, untilMs] of Object.entries(circleChipOptimisticUntil || {})){
+    if (typeof untilMs !== 'number' || untilMs <= now){
+      delete circleChipOptimisticUntil[k];
+      continue;
+    }
+    set.add(String(k));
+  }
+
+  return set;
+}
 function renderCircleChips(){
   if (topRightCircle.classList.contains('hidden')) return;
   clearCircleChipsDom();
@@ -1161,9 +1190,11 @@ function renderCircleChips(){
   const margin = 6;
   const maxR = (size/2) - chipR - margin;
 
+  const activeKeys = circleChipRenderableKeySet();
   const items = Object.entries(state.circleChips || {})
     .map(([k,v]) => ({ key:k, ...(v||{}) }))
     .filter(x => x && x.ownerId && x.type && typeof x.x === 'number' && typeof x.y === 'number')
+    .filter(x => activeKeys.has(String(x.key)))
     .sort((a,b)=> (a.placedAt||0) - (b.placedAt||0));
 
   for (const it of items){
@@ -1274,9 +1305,11 @@ function dragChipCenterFromClient(clientX, clientY){
 }
 
 function getCircleChipsAsArray(){
+  const activeKeys = circleChipRenderableKeySet();
   return Object.entries(state.circleChips || {})
     .map(([key,val]) => ({ key, ...(val||{}) }))
-    .filter(x => x && typeof x.x === 'number' && typeof x.y === 'number');
+    .filter(x => x && typeof x.x === 'number' && typeof x.y === 'number')
+    .filter(x => activeKeys.has(String(x.key)));
 }
 
 function clampToCircle(x, y, maxR){
@@ -1366,6 +1399,16 @@ function relaxCircleOverlaps(chips, params){
   return moved;
 }
 
+function clearPendingCirclePushCommits(){
+  if (circlePushRafId !== null){
+    try { cancelAnimationFrame(circlePushRafId); } catch {}
+  }
+  circlePushRaf = false;
+  circlePushRafId = null;
+  circlePushQueued = null;
+  circleChipOptimisticUntil = {};
+}
+
 function scheduleCommitCirclePush(patch){
   if (!patch || Object.keys(patch).length === 0) return;
 
@@ -1374,8 +1417,9 @@ function scheduleCommitCirclePush(patch){
   if (circlePushRaf) return;
   circlePushRaf = true;
 
-  requestAnimationFrame(async () => {
+  circlePushRafId = requestAnimationFrame(async () => {
     circlePushRaf = false;
+    circlePushRafId = null;
 
     const now = performance.now();
     if (now - circlePushLastCommitAt < 60){
@@ -1760,6 +1804,7 @@ async function commitChipToCircleMarkPlaced(info, clientX, clientY){
   seedY = seeded.y;
 
   const chipKey = `${info.ownerId}_${info.type}`;
+  circleChipOptimisticUntil[chipKey] = Date.now() + 2500;
   const chips = getCircleChipsAsArray().filter(c => c.key !== chipKey);
 
   const chipR = 13;
@@ -1818,23 +1863,35 @@ async function finishChipDrag(lastClientX, lastClientY){
 
   const dropCardId = chipHoverCardId;
   const dropInCircle = !!chipHoverInCircle;
-  const srcEl = chipDragging.sourceEl;
+  const dragInfo = chipDragging;
+  const srcEl = dragInfo.sourceEl;
 
   if (!dropCardId && !dropInCircle){
     cancelChipDrag();
     return;
   }
 
-  if (!canIPlaceChipNow(chipDragging)){
+  if (!canIPlaceChipNow(dragInfo)){
     cancelChipDrag();
     return;
   }
 
   const myTurnSeq = Number(state.game?.turnSeq || 0);
 
+  releaseChipPointerCapture();
+  chipDragging = null;
+  chipPointerId = null;
+  chipHoverCardId = null;
+  chipHoverInCircle = false;
+  chipLastClientX = null;
+  chipLastClientY = null;
+  setChipDragHints(false);
+  removeChipFloat();
+  document.documentElement.style.userSelect = '';
+
   try{
     if (dropInCircle){
-      await commitChipToCircleMarkPlaced(chipDragging, lastClientX, lastClientY);
+      await commitChipToCircleMarkPlaced(dragInfo, lastClientX, lastClientY);
 
       if (srcEl){
         srcEl.classList.remove('dragging-hide');
@@ -1863,13 +1920,13 @@ async function finishChipDrag(lastClientX, lastClientY){
 
     const cardObj = (state.centerCards || []).find(x => x && x.id === dropCardId);
     if (!cardObj){
-      cancelChipDrag();
+      if (srcEl) srcEl.classList.remove('dragging-hide');
       return;
     }
 
     lockMoveFor(1200, cardObj.id);
 
-    await commitChipPlacementAndMarkTurnPlaced(cardObj, chipDragging);
+    await commitChipPlacementAndMarkTurnPlaced(cardObj, dragInfo);
 
     if (srcEl){
       srcEl.classList.remove('dragging-hide');
@@ -1878,20 +1935,9 @@ async function finishChipDrag(lastClientX, lastClientY){
 
     openZoom(String(cardObj.label ?? ''), { autoCloseMs: 1200, force: true });
 
-  } finally {
-    releaseChipPointerCapture();
-
-    chipDragging = null;
-    chipPointerId = null;
-    chipHoverCardId = null;
-    chipHoverInCircle = false;
-
-    chipLastClientX = null;
-    chipLastClientY = null;
-
-    setChipDragHints(false);
-    removeChipFloat();
-    document.documentElement.style.userSelect = '';
+  } catch (err) {
+    if (srcEl) srcEl.classList.remove('dragging-hide');
+    throw err;
   }
 }
 
@@ -3158,6 +3204,8 @@ btnStartPopClose.addEventListener('click', () => {
 async function resetAllChipsAndInitTurn(){
   if (!state.roomCode) return;
 
+  clearPendingCirclePushCommits();
+
   const tablesSnap = await get(ref(db, `rooms/${state.roomCode}/tables`));
   const tables = tablesSnap.val() || {};
   const players = Object.entries(tables)
@@ -3217,6 +3265,8 @@ btnGameStart.addEventListener('click', async () => {
 
 btnResetRoom.addEventListener('click', async () => {
   if (!state.isHost || !state.roomCode) return;
+
+  clearPendingCirclePushCommits();
 
   const base = `rooms/${state.roomCode}`;
   await Promise.all([
