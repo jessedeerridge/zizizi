@@ -1277,6 +1277,16 @@ function dragChipCenterFromClient(clientX, clientY){
   return { x: left + 13, y: top + 13 };
 }
 
+function currentDragChipCenter(clientX, clientY){
+  if (chipFloatEl){
+    const r = chipFloatEl.getBoundingClientRect();
+    if (r.width > 0 && r.height > 0){
+      return { x: r.left + r.width/2, y: r.top + r.height/2 };
+    }
+  }
+  return dragChipCenterFromClient(clientX, clientY);
+}
+
 function getCircleChipsAsArray(){
   return Object.entries(state.circleChips || {})
     .map(([key,val]) => ({ key, ...(val||{}) }))
@@ -1756,7 +1766,7 @@ async function commitChipToCircleMarkPlaced(info, clientX, clientY){
 
   const params = circleParams();
   const { g, maxR } = params;
-  const dragCenter = dragChipCenterFromClient(clientX, clientY);
+  const dragCenter = currentDragChipCenter(clientX, clientY);
 
   let seedX = dragCenter.x - g.cx;
   let seedY = dragCenter.y - g.cy;
