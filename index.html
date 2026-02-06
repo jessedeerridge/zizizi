@@ -1030,6 +1030,7 @@ let circlePushRaf = false;
 let circlePushRafId = null;
 let circlePushQueued = null;
 let circlePushLastCommitAt = 0;
+let circleChipOptimisticUntil = {}; // { chipKey: expiresAtMs }
 
 function clamp(n, min, max){ return Math.max(min, Math.min(max, n)); }
 
@@ -1164,6 +1165,21 @@ function circleChipActiveKeySet(){
   }
   return set;
 }
+
+function circleChipRenderableKeySet(){
+  const set = circleChipActiveKeySet();
+  const now = Date.now();
+
+  for (const [k, untilMs] of Object.entries(circleChipOptimisticUntil || {})){
+    if (typeof untilMs !== 'number' || untilMs <= now){
+      delete circleChipOptimisticUntil[k];
+      continue;
+    }
+    set.add(String(k));
+  }
+
+  return set;
+}
 function renderCircleChips(){
   if (topRightCircle.classList.contains('hidden')) return;
   clearCircleChipsDom();
@@ -1174,7 +1190,7 @@ function renderCircleChips(){
   const margin = 6;
   const maxR = (size/2) - chipR - margin;
 
-  const activeKeys = circleChipActiveKeySet();
+  const activeKeys = circleChipRenderableKeySet();
   const items = Object.entries(state.circleChips || {})
     .map(([k,v]) => ({ key:k, ...(v||{}) }))
     .filter(x => x && x.ownerId && x.type && typeof x.x === 'number' && typeof x.y === 'number')
@@ -1289,7 +1305,7 @@ function dragChipCenterFromClient(clientX, clientY){
 }
 
 function getCircleChipsAsArray(){
-  const activeKeys = circleChipActiveKeySet();
+  const activeKeys = circleChipRenderableKeySet();
   return Object.entries(state.circleChips || {})
     .map(([key,val]) => ({ key, ...(val||{}) }))
     .filter(x => x && typeof x.x === 'number' && typeof x.y === 'number')
@@ -1390,6 +1406,7 @@ function clearPendingCirclePushCommits(){
   circlePushRaf = false;
   circlePushRafId = null;
   circlePushQueued = null;
+  circleChipOptimisticUntil = {};
 }
 
 function scheduleCommitCirclePush(patch){
@@ -1787,6 +1804,7 @@ async function commitChipToCircleMarkPlaced(info, clientX, clientY){
   seedY = seeded.y;
 
   const chipKey = `${info.ownerId}_${info.type}`;
+  circleChipOptimisticUntil[chipKey] = Date.now() + 2500;
   const chips = getCircleChipsAsArray().filter(c => c.key !== chipKey);
 
   const chipR = 13;
