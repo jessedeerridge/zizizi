@@ -1161,9 +1161,6 @@ function renderCircleChips(){
   const margin = 6;
   const maxR = (size/2) - chipR - margin;
 
-  const lp = state.game?.lastPlacement || null;
-  const turnPid = state.game?.turnPlayerId || null;
-
   const items = Object.entries(state.circleChips || {})
     .map(([k,v]) => ({ key:k, ...(v||{}) }))
     .filter(x => x && x.ownerId && x.type && typeof x.x === 'number' && typeof x.y === 'number')
@@ -1177,12 +1174,6 @@ function renderCircleChips(){
     el.style.color = fg;
     el.style.borderColor = ((it.colorKey || '') === 'white') ? 'rgba(0,0,0,.35)' : 'rgba(0,0,0,.25)';
     el.appendChild(makeChipShapeEl(Number(it.type) || 1));
-
-    if (turnPid && lp && state.game?.started && String(lp.cardId) === '__circle__' && lp.playerId === turnPid){
-      const near = Math.abs((it.placedAt||0) - (lp.at||0)) <= 5000;
-      if (it.ownerId === turnPid && near) el.classList.add('turn-pulsing');
-    }
-
     const x = clamp(it.x, -maxR, maxR);
     const y = clamp(it.y, -maxR, maxR);
 
@@ -1257,6 +1248,11 @@ function pointInsideCircle(clientX, clientY){
   return (dx*dx + dy*dy) <= Math.pow(radius - 4, 2);
 }
 function updateCircleHover(x,y){
+  if (chipDragging){
+    const dragCenter = dragChipCenterFromClient(x, y);
+    chipHoverInCircle = pointInsideCircle(dragCenter.x, dragCenter.y);
+    return;
+  }
   chipHoverInCircle = pointInsideCircle(x,y);
 }
 
@@ -1401,22 +1397,22 @@ function scheduleCommitCirclePush(patch){
 function resolveCirclePushWhileDragging(clientX, clientY){
   if (!chipDragging) return;
   if (!state.roomCode) return;
-  if (topRightCircle.classList.contains('hidden')) return;
+  if (topRightCircle.classList.contains("hidden")) return;
 
   const params = circleParams();
-  if (!pointInsideCircle(clientX, clientY)) return;
   const dragCenter = dragChipCenterFromClient(clientX, clientY);
+  if (!pointInsideCircle(dragCenter.x, dragCenter.y)) return;
 
   const prevX = (chipLastClientX ?? clientX);
   const prevY = (chipLastClientY ?? clientY);
   const dragDir = { x: clientX - prevX, y: clientY - prevY };
 
-  const chips = getCircleChipsAsArray();
+  const draggingKey = `${chipDragging.ownerId}_${chipDragging.type}`;
+  const chips = getCircleChipsAsArray().filter(c => c.key !== draggingKey);
   if (!chips.length) return;
 
   const hit = applyDragPushImpulse(chips, dragCenter, dragDir, params);
   const relaxed = relaxCircleOverlaps(chips, params);
-
   if (!hit && !relaxed) return;
 
   const patch = {};
@@ -1718,9 +1714,8 @@ function beginChipDrag(sourceDotEl, info, e){
   floatEl.style.borderColor = ((info.colorKey || '') === 'white') ? 'rgba(0,0,0,.35)' : 'rgba(0,0,0,.25)';
   floatEl.appendChild(makeChipShapeEl(info.type));
 
-  const rect = sourceDotEl.getBoundingClientRect();
-  chipDragOffsetX = e.clientX - rect.left;
-  chipDragOffsetY = e.clientY - rect.top;
+  chipDragOffsetX = 13;
+  chipDragOffsetY = 13;
   moveChipFloat(e.clientX, e.clientY);
 
   setChipDragHints(true);
@@ -1756,17 +1751,19 @@ async function commitChipToCircleMarkPlaced(info, clientX, clientY){
 
   const params = circleParams();
   const { g, maxR } = params;
+  const dragCenter = dragChipCenterFromClient(clientX, clientY);
 
-  let seedX = clientX - g.cx;
-  let seedY = clientY - g.cy;
+  let seedX = dragCenter.x - g.cx;
+  let seedY = dragCenter.y - g.cy;
   const seeded = clampToCircle(seedX, seedY, maxR);
-  seedX = seeded.x; seedY = seeded.y;
+  seedX = seeded.x;
+  seedY = seeded.y;
 
-  const chips = getCircleChipsAsArray();
+  const chipKey = `${info.ownerId}_${info.type}`;
+  const chips = getCircleChipsAsArray().filter(c => c.key !== chipKey);
 
   const chipR = 13;
   const minDist = chipR*2 + 1.5;
-
   for (const c of chips){
     const dx = c.x - seedX;
     const dy = c.y - seedY;
@@ -1777,26 +1774,20 @@ async function commitChipToCircleMarkPlaced(info, clientX, clientY){
       c.x += nx * overlap;
       c.y += ny * overlap;
       const clamped = clampToCircle(c.x, c.y, maxR);
-      c.x = clamped.x; c.y = clamped.y;
+      c.x = clamped.x;
+      c.y = clamped.y;
     }
   }
-
   relaxCircleOverlaps(chips, params);
 
-  const circlePatch = {};
-  for (const c of chips){
-    const old = state.circleChips?.[c.key];
-    if (!old) continue;
-    circlePatch[c.key] = { ...old, x: c.x, y: c.y };
-  }
-
   const baseRef = ref(db, `rooms/${state.roomCode}`);
-  const chipKey = `${info.ownerId}_${info.type}`;
   const idx0 = (Number(info.type) || 1) - 1;
 
   const patch = {};
-  for (const [k,v] of Object.entries(circlePatch)){
-    patch[`circleChips/${k}`] = v;
+  for (const c of chips){
+    const old = state.circleChips?.[c.key];
+    if (!old) continue;
+    patch[`circleChips/${c.key}`] = { ...old, x: c.x, y: c.y };
   }
   patch[`circleChips/${chipKey}`] = {
     ownerId: info.ownerId,
