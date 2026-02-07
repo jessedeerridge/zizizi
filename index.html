@@ -2165,51 +2165,49 @@ function calcRawInsertIndexFromBoundaries(clientX, boundaries, slotCount){
   return raw;
 }
 
-function getCardCenterXFromSlots(slots, startIdx, dir){
-  let i = startIdx;
+function getNeighborCardRectFromBoundary(slots, boundaryIdx, side){
+  let i = (side === 'left') ? (boundaryIdx - 1) : boundaryIdx;
+  const step = (side === 'left') ? -1 : +1;
+
   while (i >= 0 && i < slots.length){
     const el = slots[i];
     if (el?.classList?.contains('center-card')){
-      const r = el.getBoundingClientRect();
-      return r.left + (r.width / 2);
+      return el.getBoundingClientRect();
     }
-    i += dir;
+    i += step;
   }
   return null;
 }
 
-function calcInsertIndexStepByStep(raw, prevInsertIndex, clientX, slots){
-  const safeRaw = clampInsertIndex(raw);
-  if (typeof prevInsertIndex !== 'number') return safeRaw;
-
+function calcInsertIndexByContactPoints(prevInsertIndex, clientX, slots){
   let idx = clampInsertIndex(prevInsertIndex);
-  if (idx === safeRaw) return idx;
 
   const s = (draggingId && frozenSizing) ? frozenSizing : computeBaseSizing();
   const dragW = s.cardW || 0;
   const dragLeft = clientX - (dragW / 2);
   const dragRight = clientX + (dragW / 2);
 
-  while (idx < safeRaw){
-    if (idx >= slots.length - 1) break;
+  const minIdx = 1;
+  const maxIdx = Math.max(1, slots.length - 1);
 
-    const leftCardCenter = getCardCenterXFromSlots(slots, idx, -1);
-    if (leftCardCenter == null) break;
+  while (idx < maxIdx){
+    const rightCardRect = getNeighborCardRectFromBoundary(slots, idx, 'right');
+    if (!rightCardRect) break;
 
-    if (dragLeft > (leftCardCenter - 5)){
+    const rightCardCenter = rightCardRect.left + (rightCardRect.width / 2);
+    if (dragLeft +40>= rightCardCenter){
       idx += 1;
       continue;
     }
     break;
   }
 
-  while (idx > safeRaw){
-    if (idx <= 1) break;
+  while (idx > minIdx){
+    const leftCardRect = getNeighborCardRectFromBoundary(slots, idx, 'left');
+    if (!leftCardRect) break;
 
-    const rightCardCenter = getCardCenterXFromSlots(slots, idx - 1, +1);
-    if (rightCardCenter == null) break;
-
-    if (dragRight < (rightCardCenter + 5)){
+    const leftCardCenter = leftCardRect.left + (leftCardRect.width / 2);
+    if (dragRight -40<= leftCardCenter){
       idx -= 1;
       continue;
     }
@@ -2223,11 +2221,14 @@ function calcInsertIndexFromClientX(clientX, prevInsertIndex){
   const slots = getSlotElements();
   if (slots.length === 0) return 0;
 
+  if (typeof prevInsertIndex === 'number'){
+    return calcInsertIndexByContactPoints(prevInsertIndex, clientX, slots);
+  }
+
   const rowRect = centerRowEl.getBoundingClientRect();
   const boundaries = getSlotBoundariesFromLayout(slots, rowRect);
-
   const raw = calcRawInsertIndexFromBoundaries(clientX, boundaries, slots.length);
-  return calcInsertIndexStepByStep(raw, prevInsertIndex, clientX, slots);
+  return clampInsertIndex(raw);
 }
 
 function updateInsertMarkerFromIndex(idx){
