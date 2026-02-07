@@ -2160,18 +2160,45 @@ function getSlotBoundariesFromLayout(slots, rowRect){
   return boundaries;
 }
 
-function calcInsertIndexFromClientX(clientX){
+function calcRawInsertIndexFromBoundaries(clientX, boundaries, slotCount){
+  let raw = slotCount;
+  for (let i = 0; i < slotCount; i++){
+    if (clientX < boundaries[i+1]) { raw = i; break; }
+  }
+  return raw;
+}
+
+function applyInsertHysteresis(raw, prev, clientX, boundaries){
+  if (typeof prev !== 'number') return raw;
+  if (raw === prev) return raw;
+
+  const next = clamp(raw, 0, boundaries.length - 1);
+  const safePrev = clamp(prev, 0, boundaries.length - 1);
+  const step = next - safePrev;
+
+  if (Math.abs(step) !== 1) return raw;
+
+  const boundary = boundaries[Math.max(next, safePrev)];
+  if (typeof boundary !== 'number') return raw;
+
+  const HYSTERESIS_PX = 10;
+
+  if (step > 0 && clientX < (boundary + HYSTERESIS_PX)) return safePrev;
+  if (step < 0 && clientX > (boundary - HYSTERESIS_PX)) return safePrev;
+
+  return raw;
+}
+
+function calcInsertIndexFromClientX(clientX, prevInsertIndex){
   const slots = getSlotElements();
   if (slots.length === 0) return 0;
 
   const rowRect = centerRowEl.getBoundingClientRect();
   const boundaries = getSlotBoundariesFromLayout(slots, rowRect);
 
-  let raw = slots.length;
-  for (let i = 0; i < slots.length; i++){
-    if (clientX < boundaries[i+1]) { raw = i; break; }
-  }
-  return clampInsertIndex(raw);
+  const raw = calcRawInsertIndexFromBoundaries(clientX, boundaries, slots.length);
+  const stabilized = applyInsertHysteresis(raw, prevInsertIndex, clientX, boundaries);
+  return clampInsertIndex(stabilized);
 }
 
 function updateInsertMarkerFromIndex(idx){
@@ -2206,7 +2233,7 @@ function scheduleDragOverUpdate(clientX){
   requestAnimationFrame(() => {
     rafPending = false;
     if (latestDragClientX === null) return;
-    const idx = calcInsertIndexFromClientX(latestDragClientX);
+    const idx = calcInsertIndexFromClientX(latestDragClientX, insertIndex);
     if (insertIndex !== idx){
       insertIndex = idx;
       updateInsertMarkerFromIndex(insertIndex);
@@ -2346,7 +2373,7 @@ async function finishDrag(clientX){
 
   const fromId = draggingId;
 
-  const rawIdx = (typeof insertIndex === 'number') ? insertIndex : calcInsertIndexFromClientX(clientX);
+  const rawIdx = (typeof insertIndex === 'number') ? insertIndex : calcInsertIndexFromClientX(clientX, insertIndex);
   const idx = clampInsertIndex(rawIdx);
 
   const visible = getRenderableCenterCards();
