@@ -451,7 +451,7 @@
     overflow: visible;
   }
   .center-card:active{cursor:grabbing;}
-  .center-row.dragging .center-card{transition: transform .08s linear;}
+  .center-row.dragging .center-card{transition:none;}
 
   .center-ghost{
     width:var(--cc-w);
@@ -2147,16 +2147,13 @@ function getSlotBoundariesFromLayout(slots, rowRect){
   const boundaries = new Array(slots.length + 1);
   if (!slots.length) return boundaries;
 
-  const leftOf = (el) => rowRect.left + el.offsetLeft;
-  const rightOf = (el) => leftOf(el) + el.offsetWidth;
+  const rects = slots.map(el => el.getBoundingClientRect());
 
-  boundaries[0] = leftOf(slots[0]);
-  for (let i = 1; i < slots.length; i++){
-    const aRight = rightOf(slots[i-1]);
-    const bLeft = leftOf(slots[i]);
-    boundaries[i] = (aRight + bLeft) / 2;
+  boundaries[0] = rects[0].left;
+  for (let i = 1; i < rects.length; i++){
+    boundaries[i] = (rects[i-1].right + rects[i].left) / 2;
   }
-  boundaries[slots.length] = rightOf(slots[slots.length - 1]);
+  boundaries[slots.length] = rects[rects.length - 1].right;
   return boundaries;
 }
 
@@ -2218,7 +2215,7 @@ function updateInsertMarkerFromIndex(idx){
   const markerW = mRect.width || 0;
 
   const refSlot = slots[Math.min(Math.max(Math.min(safeIdx, slots.length-1), 0), slots.length-1)];
-  const top = refSlot.offsetTop;
+  const top = refSlot.getBoundingClientRect().top - rowRect.top;
 
   const left = (bX - rowRect.left) - markerW/2;
 
