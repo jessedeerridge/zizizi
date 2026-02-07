@@ -2183,15 +2183,15 @@ function getSlotRects(slots){
   return slots.map(el => el.getBoundingClientRect());
 }
 
-function findNextCardSlotIndex(slots, fromIdxExclusive){
-  for (let i = fromIdxExclusive + 1; i < slots.length; i++){
+function findRightCardSlotAtInsertIndex(slots, insertIdx){
+  for (let i = insertIdx; i < slots.length; i++){
     if (slots[i]?.classList?.contains('center-card')) return i;
   }
   return -1;
 }
 
-function findPrevCardSlotIndex(slots, fromIdxExclusive){
-  for (let i = fromIdxExclusive - 1; i >= 0; i--){
+function findLeftCardSlotAtInsertIndex(slots, insertIdx){
+  for (let i = insertIdx - 1; i >= 0; i--){
     if (slots[i]?.classList?.contains('center-card')) return i;
   }
   return -1;
@@ -2211,7 +2211,7 @@ function calcInsertIndexFromClientX(clientX, prevInsertIndex){
 
   // 右方向：ドラッグカード右辺が「右カード中心+5」を超えたら右へ1つ進める。
   for (let guard = 0; guard < slots.length; guard++){
-    const rightCardSlot = findNextCardSlotIndex(slots, idx - 1);
+    const rightCardSlot = findRightCardSlotAtInsertIndex(slots, idx);
     if (rightCardSlot < 0) break;
 
     const centerX = slotRects[rightCardSlot].left + (slotRects[rightCardSlot].width / 2);
@@ -2224,7 +2224,7 @@ function calcInsertIndexFromClientX(clientX, prevInsertIndex){
 
   // 左方向：ドラッグカード左辺が「左カード中心-5」を超えたら左へ1つ進める。
   for (let guard = 0; guard < slots.length; guard++){
-    const leftCardSlot = findPrevCardSlotIndex(slots, idx);
+    const leftCardSlot = findLeftCardSlotAtInsertIndex(slots, idx);
     if (leftCardSlot < 0) break;
 
     const centerX = slotRects[leftCardSlot].left + (slotRects[leftCardSlot].width / 2);
