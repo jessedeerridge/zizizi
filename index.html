@@ -1001,6 +1001,7 @@ let draggingFromIndex = -1;
 let insertIndex = null;
 let frozenSizing = null;
 let rafPending = false;
+let latestDragClientX = null;
 
 let dragPointerId = null;
 let dragFloatEl = null;
@@ -2198,11 +2199,13 @@ function updateInsertMarkerFromIndex(idx){
 }
 
 function scheduleDragOverUpdate(clientX){
+  latestDragClientX = clientX;
   if (rafPending) return;
   rafPending = true;
   requestAnimationFrame(() => {
     rafPending = false;
-    const idx = calcInsertIndexFromClientX(clientX);
+    if (latestDragClientX === null) return;
+    const idx = calcInsertIndexFromClientX(latestDragClientX);
     if (insertIndex !== idx){
       insertIndex = idx;
       updateInsertMarkerFromIndex(insertIndex);
@@ -2383,6 +2386,7 @@ function cleanupDrag(){
   insertIndex = null;
   frozenSizing = null;
   rafPending = false;
+  latestDragClientX = null;
 
   if (dragSourceEl && prevPointerId !== null && dragSourceEl.hasPointerCapture?.(prevPointerId)){
     try { dragSourceEl.releasePointerCapture(prevPointerId); } catch {}
