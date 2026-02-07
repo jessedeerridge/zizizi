@@ -2165,44 +2165,74 @@ function calcRawInsertIndexFromBoundaries(clientX, boundaries, slotCount){
   return raw;
 }
 
-function applyInsertHysteresis(raw, prev, clientX, boundaries){
-  if (typeof prev !== 'number') return raw;
-  if (raw === prev) return raw;
+const DRAG_INSERT_TUNING = {
+  // スライド閾値: カード辺が隣カード中心をこのpxだけ越えたら移動
+  EDGE_TRIGGER_PX: 5,
+};
 
-  const next = clamp(raw, 0, boundaries.length - 1);
-  const safePrev = clamp(prev, 0, boundaries.length - 1);
-  const step = next - safePrev;
-
-  if (Math.abs(step) !== 1) return raw;
-
-  const boundary = boundaries[Math.max(next, safePrev)];
-  if (typeof boundary !== 'number') return raw;
-
+function getDraggedCardEdgesFromPointerX(pointerClientX){
   const s = (draggingId && frozenSizing) ? frozenSizing : computeBaseSizing();
-  const RIGHT_COMPENSATION_PX = Math.round((s.cardW || 0) * 0.95);
-
-  const HYSTERESIS_FORWARD_PX = -RIGHT_COMPENSATION_PX;
-  const HYSTERESIS_BACKWARD_PX = 10;
-
-  const forwardThreshold = boundary + HYSTERESIS_FORWARD_PX;
-  const backwardThreshold = boundary - HYSTERESIS_BACKWARD_PX;
-
-  if (step > 0 && clientX < forwardThreshold) return safePrev;
-  if (step < 0 && clientX > backwardThreshold) return safePrev;
-
-  return raw;
+  const left = pointerClientX - dragOffsetX;
+  const width = (s.cardW || 0);
+  return {
+    left,
+    right: left + width,
+  };
 }
 
-function calcInsertIndexFromClientX(clientX, prevInsertIndex){
+function getCenterCardSlotsWithRect(){
+  return getSlotElements()
+    .map((slotEl, slotIdx) => ({ slotEl, slotIdx }))
+    .filter(x => x.slotEl?.classList?.contains('center-card'))
+    .map(x => ({
+      slotIdx: x.slotIdx,
+      rect: x.slotEl.getBoundingClientRect(),
+    }));
+}
+
+function findCardBySlot(cards, slotIdx){
+  return cards.find(c => c.slotIdx === slotIdx) || null;
+}
+
+function calcInsertIndexFromClientX(pointerClientX, prevInsertIndex){
   const slots = getSlotElements();
   if (slots.length === 0) return 0;
 
-  const rowRect = centerRowEl.getBoundingClientRect();
-  const boundaries = getSlotBoundariesFromLayout(slots, rowRect);
+  const cards = getCenterCardSlotsWithRect();
+  if (!cards.length) return clampInsertIndex(0);
 
-  const raw = calcRawInsertIndexFromBoundaries(clientX, boundaries, slots.length);
-  const stabilized = applyInsertHysteresis(raw, prevInsertIndex, clientX, boundaries);
-  return clampInsertIndex(stabilized);
+  const triggerPx = Number(DRAG_INSERT_TUNING.EDGE_TRIGGER_PX || 0);
+  const edges = getDraggedCardEdgesFromPointerX(pointerClientX);
+
+  let idx = (typeof prevInsertIndex === 'number')
+    ? clampInsertIndex(prevInsertIndex)
+    : clampInsertIndex(draggingFromIndex);
+
+  for (let guard = 0; guard < slots.length; guard++){
+    const rightCard = findCardBySlot(cards, idx);
+    if (!rightCard) break;
+
+    const rightCenter = rightCard.rect.left + (rightCard.rect.width / 2);
+    if (edges.right <= (rightCenter + triggerPx)) break;
+
+    const nextIdx = clampInsertIndex(rightCard.slotIdx + 1);
+    if (nextIdx === idx) break;
+    idx = nextIdx;
+  }
+
+  for (let guard = 0; guard < slots.length; guard++){
+    const leftCard = findCardBySlot(cards, idx - 1);
+    if (!leftCard) break;
+
+    const leftCenter = leftCard.rect.left + (leftCard.rect.width / 2);
+    if (edges.left >= (leftCenter - triggerPx)) break;
+
+    const nextIdx = clampInsertIndex(leftCard.slotIdx);
+    if (nextIdx === idx) break;
+    idx = nextIdx;
+  }
+
+  return clampInsertIndex(idx);
 }
 
 function updateInsertMarkerFromIndex(idx){
@@ -2281,10 +2311,6 @@ function moveDragFloat(clientX, clientY){
   const y = clientY - dragOffsetY;
   dragFloatEl.style.transform = `translate(${x}px, ${y}px)`;
 }
-function dragCardCenterXFromPointer(clientX){
-  const s = (draggingId && frozenSizing) ? frozenSizing : computeBaseSizing();
-  return clientX - dragOffsetX + (s.cardW / 2);
-}
 function removeDragFloat(){
   if (!dragFloatEl) return;
   dragFloatEl.remove();
@@ -2350,14 +2376,14 @@ function handleDraggingPointerMove(e){
   if (dragPointerId !== null && e.pointerId !== dragPointerId) return;
   e.preventDefault();
   moveDragFloat(e.clientX, e.clientY);
-  scheduleDragOverUpdate(dragCardCenterXFromPointer(e.clientX));
+  scheduleDragOverUpdate(e.clientX);
 }
 
 async function handleDraggingPointerUp(e){
   if (!draggingId) return;
   if (dragPointerId !== null && e.pointerId !== dragPointerId) return;
   e.preventDefault();
-  await finishDrag(dragCardCenterXFromPointer(e.clientX));
+  await finishDrag(e.clientX);
 }
 
 function handleDraggingPointerCancel(e){
@@ -2370,7 +2396,7 @@ window.addEventListener('pointermove', handleDraggingPointerMove, { passive:fals
 window.addEventListener('pointerup', handleDraggingPointerUp, { passive:false });
 window.addEventListener('pointercancel', handleDraggingPointerCancel, { passive:false });
 
-async function finishDrag(probeX){
+async function finishDrag(pointerClientX){
   if (!draggingId || isCommitting) return;
   isCommitting = true;
 
@@ -2381,7 +2407,7 @@ async function finishDrag(probeX){
 
   const fromId = draggingId;
 
-  const rawIdx = (typeof insertIndex === 'number') ? insertIndex : calcInsertIndexFromClientX(probeX, insertIndex);
+  const rawIdx = (typeof insertIndex === 'number') ? insertIndex : calcInsertIndexFromClientX(pointerClientX, insertIndex);
   const idx = clampInsertIndex(rawIdx);
 
   const visible = getRenderableCenterCards();
