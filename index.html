@@ -2179,9 +2179,14 @@ function getNeighborCardRectFromBoundary(slots, boundaryIdx, side){
   return null;
 }
 
-function calcInsertIndexByCenterThreshold(prevInsertIndex, clientX, slots){
+function calcInsertIndexByContactPoints(prevInsertIndex, clientX, slots){
   let idx = clampInsertIndex(prevInsertIndex);
+
+  const s = (draggingId && frozenSizing) ? frozenSizing : computeBaseSizing();
+  const dragW = s.cardW || 0;
+  const dragLeft = clientX - (dragW / 2);
   const dragCenter = clientX;
+  const dragRight = clientX + (dragW / 2);
 
   const minIdx = 1;
   const maxIdx = Math.max(1, slots.length - 1);
@@ -2190,7 +2195,15 @@ function calcInsertIndexByCenterThreshold(prevInsertIndex, clientX, slots){
     const rightCardRect = getNeighborCardRectFromBoundary(slots, idx, 'right');
     if (!rightCardRect) break;
 
-    if (dragCenter >= rightCardRect.left){
+    const rightCardLeft = rightCardRect.left;
+    const rightCardCenter = rightCardRect.left + (rightCardRect.width / 2);
+    const rightCardRight = rightCardRect.right;
+
+    const rightEdgeContact = (dragRight >= rightCardLeft);
+    const centerContact = (dragCenter >= rightCardCenter);
+    const leftEdgeContact = (dragLeft >= rightCardRight);
+
+    if (rightEdgeContact || centerContact || leftEdgeContact){
       idx += 1;
       continue;
     }
@@ -2201,7 +2214,15 @@ function calcInsertIndexByCenterThreshold(prevInsertIndex, clientX, slots){
     const leftCardRect = getNeighborCardRectFromBoundary(slots, idx, 'left');
     if (!leftCardRect) break;
 
-    if (dragCenter <= leftCardRect.right){
+    const leftCardRight = leftCardRect.right;
+    const leftCardCenter = leftCardRect.left + (leftCardRect.width / 2);
+    const leftCardLeft = leftCardRect.left;
+
+    const leftEdgeContact = (dragLeft <= leftCardRight);
+    const centerContact = (dragCenter <= leftCardCenter);
+    const rightEdgeContact = (dragRight <= leftCardLeft);
+
+    if (leftEdgeContact || centerContact || rightEdgeContact){
       idx -= 1;
       continue;
     }
@@ -2216,7 +2237,7 @@ function calcInsertIndexFromClientX(clientX, prevInsertIndex){
   if (slots.length === 0) return 0;
 
   if (typeof prevInsertIndex === 'number'){
-    return calcInsertIndexByCenterThreshold(prevInsertIndex, clientX, slots);
+    return calcInsertIndexByContactPoints(prevInsertIndex, clientX, slots);
   }
 
   const rowRect = centerRowEl.getBoundingClientRect();
