@@ -2165,6 +2165,37 @@ function calcRawInsertIndexFromBoundaries(clientX, boundaries, slotCount){
   return raw;
 }
 
+const DRAG_INSERT_TUNING = {
+  // 右へドラッグ時に判定をどれだけ早めるか（0.5 = カード半分）
+  RIGHT_PROBE_RATIO: 0.30,
+  // 左へドラッグ時に判定をどれだけ早めるか（0.5 = カード半分）
+  LEFT_PROBE_RATIO: 0.00,
+
+  // 境界を跨いだ後の戻りにくさ（px）。大きいほどその方向に進みやすい。
+  RIGHT_STICKINESS_PX: 10,
+  LEFT_STICKINESS_PX: 10,
+};
+
+function applyDirectionalProbeBias(clientX){
+  if (!draggingId || draggingFromIndex < 0) return clientX;
+
+  const slots = getSlotElements();
+  const anchor = slots[draggingFromIndex];
+  if (!anchor) return clientX;
+
+  const anchorRect = anchor.getBoundingClientRect();
+  const anchorCenterX = anchorRect.left + (anchorRect.width / 2);
+
+  const s = (draggingId && frozenSizing) ? frozenSizing : computeBaseSizing();
+  const stepPx = (s.cardW || 0) + (s.gap || 0);
+
+  const rightBias = stepPx * Number(DRAG_INSERT_TUNING.RIGHT_PROBE_RATIO || 0);
+  const leftBias = stepPx * Number(DRAG_INSERT_TUNING.LEFT_PROBE_RATIO || 0);
+
+  if (clientX >= anchorCenterX) return clientX + rightBias;
+  return clientX - leftBias;
+}
+
 function applyInsertHysteresis(raw, prev, clientX, boundaries){
   if (typeof prev !== 'number') return raw;
   if (raw === prev) return raw;
@@ -2178,28 +2209,15 @@ function applyInsertHysteresis(raw, prev, clientX, boundaries){
   const boundary = boundaries[Math.max(next, safePrev)];
   if (typeof boundary !== 'number') return raw;
 
-  const s = (draggingId && frozenSizing) ? frozenSizing : computeBaseSizing();
-  const RIGHT_COMPENSATION_PX = Math.round((s.cardW || 0) * 0.95);
+  const rightStickiness = Number(DRAG_INSERT_TUNING.RIGHT_STICKINESS_PX || 0);
+  const leftStickiness = Number(DRAG_INSERT_TUNING.LEFT_STICKINESS_PX || 0);
 
-  const HYSTERESIS_FORWARD_PX = -RIGHT_COMPENSATION_PX;
-  const HYSTERESIS_BACKWARD_PX = 10;
-
-  const forwardThreshold = boundary + HYSTERESIS_FORWARD_PX;
-  const backwardThreshold = boundary - HYSTERESIS_BACKWARD_PX;
+  const forwardThreshold = boundary - rightStickiness;
+  const backwardThreshold = boundary + leftStickiness;
 
   if (step > 0 && clientX < forwardThreshold) return safePrev;
   if (step < 0 && clientX > backwardThreshold) return safePrev;
 
-  return raw;
-}
-
-function normalizeInsertIndexForDragging(raw){
-  if (typeof raw !== 'number') return raw;
-  if (!draggingId || draggingFromIndex < 0) return raw;
-
-  // 右方向へ移動中は「ドラッグ中カードのゴースト枠」を1つ飛ばして評価する。
-  // これで左移動と同様、隣カードの中間あたりでスライド判定が入る。
-  if (raw > draggingFromIndex) return raw + 1;
   return raw;
 }
 
@@ -2209,11 +2227,11 @@ function calcInsertIndexFromClientX(clientX, prevInsertIndex){
 
   const rowRect = centerRowEl.getBoundingClientRect();
   const boundaries = getSlotBoundariesFromLayout(slots, rowRect);
+  const probeX = applyDirectionalProbeBias(clientX);
 
-  const raw = calcRawInsertIndexFromBoundaries(clientX, boundaries, slots.length);
-  const stabilized = applyInsertHysteresis(raw, prevInsertIndex, clientX, boundaries);
-  const normalized = normalizeInsertIndexForDragging(stabilized);
-  return clampInsertIndex(normalized);
+  const raw = calcRawInsertIndexFromBoundaries(probeX, boundaries, slots.length);
+  const stabilized = applyInsertHysteresis(raw, prevInsertIndex, probeX, boundaries);
+  return clampInsertIndex(stabilized);
 }
 
 function updateInsertMarkerFromIndex(idx){
