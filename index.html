@@ -44,7 +44,7 @@
     background-repeat:no-repeat;
     touch-action:manipulation;
   }
-  main.prejoin{ background-image:url('maemain.jpg'); }
+  main.prejoin{ background-image:url('zitop.jpg'); }
   main.joined{ background-image:url('zimain.jpg'); }
 
   /* =========================
@@ -451,7 +451,7 @@
     overflow: visible;
   }
   .center-card:active{cursor:grabbing;}
-  .center-row.dragging .center-card{transition: transform .08s linear;}
+  .center-row.dragging .center-card{transition:none;}
 
   .center-ghost{
     width:var(--cc-w);
@@ -1001,6 +1001,7 @@ let draggingFromIndex = -1;
 let insertIndex = null;
 let frozenSizing = null;
 let rafPending = false;
+let latestDragClientX = null;
 
 let dragPointerId = null;
 let dragFloatEl = null;
@@ -2142,26 +2143,66 @@ function clampInsertIndex(idx){
   return clamp(idx, 1, maxSlots - 1);
 }
 
-function calcInsertIndexFromClientX(clientX){
+function getSlotBoundariesFromLayout(slots, rowRect){
+  const boundaries = new Array(slots.length + 1);
+  if (!slots.length) return boundaries;
+
+  const rects = slots.map(el => el.getBoundingClientRect());
+
+  boundaries[0] = rects[0].left;
+  for (let i = 1; i < rects.length; i++){
+    boundaries[i] = (rects[i-1].right + rects[i].left) / 2;
+  }
+  boundaries[slots.length] = rects[rects.length - 1].right;
+  return boundaries;
+}
+
+function calcRawInsertIndexFromBoundaries(clientX, boundaries, slotCount){
+  let raw = slotCount;
+  for (let i = 0; i < slotCount; i++){
+    if (clientX < boundaries[i+1]) { raw = i; break; }
+  }
+  return raw;
+}
+
+function applyInsertHysteresis(raw, prev, clientX, boundaries){
+  if (typeof prev !== 'number') return raw;
+  if (raw === prev) return raw;
+
+  const next = clamp(raw, 0, boundaries.length - 1);
+  const safePrev = clamp(prev, 0, boundaries.length - 1);
+  const step = next - safePrev;
+
+  if (Math.abs(step) !== 1) return raw;
+
+  const boundary = boundaries[Math.max(next, safePrev)];
+  if (typeof boundary !== 'number') return raw;
+
+  const s = (draggingId && frozenSizing) ? frozenSizing : computeBaseSizing();
+  const RIGHT_COMPENSATION_PX = Math.round((s.cardW || 0) * 0.95);
+
+  const HYSTERESIS_FORWARD_PX = -RIGHT_COMPENSATION_PX;
+  const HYSTERESIS_BACKWARD_PX = 10;
+
+  const forwardThreshold = boundary + HYSTERESIS_FORWARD_PX;
+  const backwardThreshold = boundary - HYSTERESIS_BACKWARD_PX;
+
+  if (step > 0 && clientX < forwardThreshold) return safePrev;
+  if (step < 0 && clientX > backwardThreshold) return safePrev;
+
+  return raw;
+}
+
+function calcInsertIndexFromClientX(clientX, prevInsertIndex){
   const slots = getSlotElements();
   if (slots.length === 0) return 0;
 
   const rowRect = centerRowEl.getBoundingClientRect();
+  const boundaries = getSlotBoundariesFromLayout(slots, rowRect);
 
-  const boundaries = new Array(slots.length + 1);
-  boundaries[0] = rowRect.left;
-  for (let i = 1; i < slots.length; i++){
-    const a = slots[i-1].getBoundingClientRect();
-    const b = slots[i].getBoundingClientRect();
-    boundaries[i] = (a.right + b.left) / 2;
-  }
-  boundaries[slots.length] = rowRect.right;
-
-  let raw = slots.length;
-  for (let i = 0; i < slots.length; i++){
-    if (clientX < boundaries[i+1]) { raw = i; break; }
-  }
-  return clampInsertIndex(raw);
+  const raw = calcRawInsertIndexFromBoundaries(clientX, boundaries, slots.length);
+  const stabilized = applyInsertHysteresis(raw, prevInsertIndex, clientX, boundaries);
+  return clampInsertIndex(stabilized);
 }
 
 function updateInsertMarkerFromIndex(idx){
@@ -2171,14 +2212,7 @@ function updateInsertMarkerFromIndex(idx){
   const rowRect = centerRowEl.getBoundingClientRect();
   if (slots.length === 0) { hideInsertMarker(); return; }
 
-  const boundaries = new Array(slots.length + 1);
-  boundaries[0] = rowRect.left;
-  for (let i = 1; i < slots.length; i++){
-    const a = slots[i-1].getBoundingClientRect();
-    const b = slots[i].getBoundingClientRect();
-    boundaries[i] = (a.right + b.left) / 2;
-  }
-  boundaries[slots.length] = rowRect.right;
+  const boundaries = getSlotBoundariesFromLayout(slots, rowRect);
 
   const safeIdx = clampInsertIndex(idx);
   const bX = boundaries[clamp(safeIdx, 0, slots.length)];
@@ -2188,8 +2222,7 @@ function updateInsertMarkerFromIndex(idx){
   const markerW = mRect.width || 0;
 
   const refSlot = slots[Math.min(Math.max(Math.min(safeIdx, slots.length-1), 0), slots.length-1)];
-  const sRect = refSlot.getBoundingClientRect();
-  const top = sRect.top - rowRect.top;
+  const top = refSlot.getBoundingClientRect().top - rowRect.top;
 
   const left = (bX - rowRect.left) - markerW/2;
 
@@ -2198,11 +2231,13 @@ function updateInsertMarkerFromIndex(idx){
 }
 
 function scheduleDragOverUpdate(clientX){
+  latestDragClientX = clientX;
   if (rafPending) return;
   rafPending = true;
   requestAnimationFrame(() => {
     rafPending = false;
-    const idx = calcInsertIndexFromClientX(clientX);
+    if (latestDragClientX === null) return;
+    const idx = calcInsertIndexFromClientX(latestDragClientX, insertIndex);
     if (insertIndex !== idx){
       insertIndex = idx;
       updateInsertMarkerFromIndex(insertIndex);
@@ -2245,6 +2280,10 @@ function moveDragFloat(clientX, clientY){
   const x = clientX - dragOffsetX;
   const y = clientY - dragOffsetY;
   dragFloatEl.style.transform = `translate(${x}px, ${y}px)`;
+}
+function dragCardCenterXFromPointer(clientX){
+  const s = (draggingId && frozenSizing) ? frozenSizing : computeBaseSizing();
+  return clientX - dragOffsetX + (s.cardW / 2);
 }
 function removeDragFloat(){
   if (!dragFloatEl) return;
@@ -2311,14 +2350,14 @@ function handleDraggingPointerMove(e){
   if (dragPointerId !== null && e.pointerId !== dragPointerId) return;
   e.preventDefault();
   moveDragFloat(e.clientX, e.clientY);
-  scheduleDragOverUpdate(e.clientX);
+  scheduleDragOverUpdate(dragCardCenterXFromPointer(e.clientX));
 }
 
 async function handleDraggingPointerUp(e){
   if (!draggingId) return;
   if (dragPointerId !== null && e.pointerId !== dragPointerId) return;
   e.preventDefault();
-  await finishDrag(e.clientX);
+  await finishDrag(dragCardCenterXFromPointer(e.clientX));
 }
 
 function handleDraggingPointerCancel(e){
@@ -2331,7 +2370,7 @@ window.addEventListener('pointermove', handleDraggingPointerMove, { passive:fals
 window.addEventListener('pointerup', handleDraggingPointerUp, { passive:false });
 window.addEventListener('pointercancel', handleDraggingPointerCancel, { passive:false });
 
-async function finishDrag(clientX){
+async function finishDrag(probeX){
   if (!draggingId || isCommitting) return;
   isCommitting = true;
 
@@ -2342,7 +2381,7 @@ async function finishDrag(clientX){
 
   const fromId = draggingId;
 
-  const rawIdx = (typeof insertIndex === 'number') ? insertIndex : calcInsertIndexFromClientX(clientX);
+  const rawIdx = (typeof insertIndex === 'number') ? insertIndex : calcInsertIndexFromClientX(probeX, insertIndex);
   const idx = clampInsertIndex(rawIdx);
 
   const visible = getRenderableCenterCards();
@@ -2383,6 +2422,7 @@ function cleanupDrag(){
   insertIndex = null;
   frozenSizing = null;
   rafPending = false;
+  latestDragClientX = null;
 
   if (dragSourceEl && prevPointerId !== null && dragSourceEl.hasPointerCapture?.(prevPointerId)){
     try { dragSourceEl.releasePointerCapture(prevPointerId); } catch {}
