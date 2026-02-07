@@ -2191,7 +2191,7 @@ function calcInsertIndexStepByStep(raw, prevInsertIndex, clientX, slots){
   while (idx < slots.length - 1){
     if (idx >= slots.length - 1) break;
 
-    const leftCardCenter = getCardCenterXFromSlots(slots, idx, -1);
+    const leftCardCenter = getCardCenterXFromSlots(slots, idx - 1, -1);
     if (leftCardCenter == null) break;
 
     if (dragLeft >= leftCardCenter){
@@ -2204,7 +2204,7 @@ function calcInsertIndexStepByStep(raw, prevInsertIndex, clientX, slots){
   while (idx > 1){
     if (idx <= 1) break;
 
-    const rightCardCenter = getCardCenterXFromSlots(slots, idx - 1, +1);
+    const rightCardCenter = getCardCenterXFromSlots(slots, idx, +1);
     if (rightCardCenter == null) break;
 
     if (dragRight <= rightCardCenter){
