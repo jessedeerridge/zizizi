@@ -2143,20 +2143,29 @@ function clampInsertIndex(idx){
   return clamp(idx, 1, maxSlots - 1);
 }
 
+function getSlotBoundariesFromLayout(slots, rowRect){
+  const boundaries = new Array(slots.length + 1);
+  if (!slots.length) return boundaries;
+
+  const leftOf = (el) => rowRect.left + el.offsetLeft;
+  const rightOf = (el) => leftOf(el) + el.offsetWidth;
+
+  boundaries[0] = leftOf(slots[0]);
+  for (let i = 1; i < slots.length; i++){
+    const aRight = rightOf(slots[i-1]);
+    const bLeft = leftOf(slots[i]);
+    boundaries[i] = (aRight + bLeft) / 2;
+  }
+  boundaries[slots.length] = rightOf(slots[slots.length - 1]);
+  return boundaries;
+}
+
 function calcInsertIndexFromClientX(clientX){
   const slots = getSlotElements();
   if (slots.length === 0) return 0;
 
   const rowRect = centerRowEl.getBoundingClientRect();
-
-  const boundaries = new Array(slots.length + 1);
-  boundaries[0] = rowRect.left;
-  for (let i = 1; i < slots.length; i++){
-    const a = slots[i-1].getBoundingClientRect();
-    const b = slots[i].getBoundingClientRect();
-    boundaries[i] = (a.right + b.left) / 2;
-  }
-  boundaries[slots.length] = rowRect.right;
+  const boundaries = getSlotBoundariesFromLayout(slots, rowRect);
 
   let raw = slots.length;
   for (let i = 0; i < slots.length; i++){
@@ -2172,14 +2181,7 @@ function updateInsertMarkerFromIndex(idx){
   const rowRect = centerRowEl.getBoundingClientRect();
   if (slots.length === 0) { hideInsertMarker(); return; }
 
-  const boundaries = new Array(slots.length + 1);
-  boundaries[0] = rowRect.left;
-  for (let i = 1; i < slots.length; i++){
-    const a = slots[i-1].getBoundingClientRect();
-    const b = slots[i].getBoundingClientRect();
-    boundaries[i] = (a.right + b.left) / 2;
-  }
-  boundaries[slots.length] = rowRect.right;
+  const boundaries = getSlotBoundariesFromLayout(slots, rowRect);
 
   const safeIdx = clampInsertIndex(idx);
   const bX = boundaries[clamp(safeIdx, 0, slots.length)];
@@ -2189,8 +2191,7 @@ function updateInsertMarkerFromIndex(idx){
   const markerW = mRect.width || 0;
 
   const refSlot = slots[Math.min(Math.max(Math.min(safeIdx, slots.length-1), 0), slots.length-1)];
-  const sRect = refSlot.getBoundingClientRect();
-  const top = sRect.top - rowRect.top;
+  const top = refSlot.offsetTop;
 
   const left = (bX - rowRect.left) - markerW/2;
 
