@@ -2147,7 +2147,7 @@ function getSlotBoundariesFromLayout(slots, rowRect){
   const boundaries = new Array(slots.length + 1);
   if (!slots.length) return boundaries;
 
-  const rects = slots.map(el => getSlotLogicalRect(el, rowRect));
+  const rects = slots.map(el => el.getBoundingClientRect());
 
   boundaries[0] = rects[0].left;
   for (let i = 1; i < rects.length; i++){
@@ -2155,13 +2155,6 @@ function getSlotBoundariesFromLayout(slots, rowRect){
   }
   boundaries[slots.length] = rects[rects.length - 1].right;
   return boundaries;
-}
-
-function getSlotLogicalRect(el, rowRect){
-  const left = rowRect.left + el.offsetLeft;
-  const width = el.offsetWidth;
-  const right = left + width;
-  return { left, right, width };
 }
 
 function calcRawInsertIndexFromBoundaries(clientX, boundaries, slotCount){
@@ -2173,14 +2166,13 @@ function calcRawInsertIndexFromBoundaries(clientX, boundaries, slotCount){
 }
 
 function getNeighborCardRectFromBoundary(slots, boundaryIdx, side){
-  const rowRect = centerRowEl.getBoundingClientRect();
   let i = (side === 'left') ? (boundaryIdx - 1) : boundaryIdx;
   const step = (side === 'left') ? -1 : +1;
 
   while (i >= 0 && i < slots.length){
     const el = slots[i];
     if (el?.classList?.contains('center-card')){
-      return getSlotLogicalRect(el, rowRect);
+      return el.getBoundingClientRect();
     }
     i += step;
   }
