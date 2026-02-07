@@ -2178,11 +2178,13 @@ function applyInsertHysteresis(raw, prev, clientX, boundaries){
   const boundary = boundaries[Math.max(next, safePrev)];
   if (typeof boundary !== 'number') return raw;
 
-  const FORWARD_BIAS_PX = 4;
-  const HYSTERESIS_FORWARD_PX = 0;
+  const s = (draggingId && frozenSizing) ? frozenSizing : computeBaseSizing();
+  const RIGHT_COMPENSATION_PX = Math.round((s.cardW || 0) * 0.95);
+
+  const HYSTERESIS_FORWARD_PX = -RIGHT_COMPENSATION_PX;
   const HYSTERESIS_BACKWARD_PX = 10;
 
-  const forwardThreshold = (boundary - FORWARD_BIAS_PX) + HYSTERESIS_FORWARD_PX;
+  const forwardThreshold = boundary + HYSTERESIS_FORWARD_PX;
   const backwardThreshold = boundary - HYSTERESIS_BACKWARD_PX;
 
   if (step > 0 && clientX < forwardThreshold) return safePrev;
