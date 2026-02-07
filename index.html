@@ -485,6 +485,12 @@
     overflow: visible;
   }
 
+  .drag-float.remote{
+    z-index:9500;
+    opacity:.9;
+    filter:saturate(.92);
+  }
+
   /* ✅ カード移動時のinsertMarkerを透明化 */
   #insertMarker{
     position:absolute;
@@ -694,7 +700,7 @@
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
 import {
-  getDatabase, ref, set, get, update, onValue, remove, runTransaction
+  getDatabase, ref, set, get, update, onValue, remove, runTransaction, onDisconnect
 } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 
 /* ▼ Firebase 設定 */
@@ -1009,6 +1015,8 @@ let dragOffsetX = 0;
 let dragOffsetY = 0;
 let isCommitting = false;
 let dragSourceEl = null;
+let remoteDragging = {};
+let remoteDragUnsub = null;
 
 let pendingCardDown = null;
 
@@ -2066,6 +2074,7 @@ function subscribeCenterCards(){
     renderCenterRow();
     updatePlayerLinesGeometry();
     renderPlayerLines(state.players || []);
+    renderRemoteDraggingOverlays();
 
     if (draggingId && dragFloatEl){
       const c = (state.centerCards || []).find(x => x && x.id === draggingId);
@@ -2274,6 +2283,102 @@ function scheduleDragOverUpdate(clientX){
 
 function idsOf(arr){ return arr.map(x => String(x?.id ?? '')).join('|'); }
 
+function dragStateBasePath(){
+  if (!state.roomCode) return null;
+  return `rooms/${state.roomCode}/draggingCards`;
+}
+
+async function pushMyDragState(payload){
+  const base = dragStateBasePath();
+  if (!base || !state.userId) return;
+  await set(ref(db, `${base}/${state.userId}`), payload);
+}
+
+function schedulePushMyDragMove(payload){
+  if (!payload || !state.roomCode || !state.userId) return;
+  if (schedulePushMyDragMove.raf) return;
+  schedulePushMyDragMove.latest = payload;
+  schedulePushMyDragMove.raf = requestAnimationFrame(async () => {
+    schedulePushMyDragMove.raf = null;
+    const latest = schedulePushMyDragMove.latest;
+    schedulePushMyDragMove.latest = null;
+    if (!latest) return;
+    try {
+      await pushMyDragState(latest);
+    } catch {}
+  });
+}
+
+async function clearMyDragState(){
+  const base = dragStateBasePath();
+  if (!base || !state.userId) return;
+  try {
+    await remove(ref(db, `${base}/${state.userId}`));
+  } catch {}
+}
+
+function ensureRemoteDragFloat(userId){
+  const id = `remote-drag-${String(userId).replace(/[^a-zA-Z0-9_-]/g,'_')}`;
+  let el = document.getElementById(id);
+  if (el) return el;
+  el = document.createElement('div');
+  el.id = id;
+  el.className = 'drag-float remote';
+  document.body.appendChild(el);
+  return el;
+}
+
+function removeRemoteDragFloat(userId){
+  const id = `remote-drag-${String(userId).replace(/[^a-zA-Z0-9_-]/g,'_')}`;
+  const el = document.getElementById(id);
+  if (el) el.remove();
+}
+
+function renderRemoteDraggingOverlays(){
+  const cards = getRenderableCenterCards();
+  const byId = new Map(cards.map(c => [String(c.id), c]));
+
+  Object.entries(remoteDragging || {}).forEach(([userId, info]) => {
+    if (!info || String(userId) === String(state.userId)){
+      removeRemoteDragFloat(userId);
+      return;
+    }
+
+    const cardId = String(info.cardId || '');
+    const c = byId.get(cardId);
+    if (!c){
+      removeRemoteDragFloat(userId);
+      return;
+    }
+
+    const cardEl = ensureRemoteDragFloat(userId);
+    cardEl.textContent = String(c.label ?? '');
+    cardEl.style.backgroundImage = `url('${centerRowCardBgUrl(c.label, { faceUp:false })}')`;
+    cardEl.style.transform = `translate(${Number(info.x||-9999)}px, ${Number(info.y||-9999)}px)`;
+    renderCardChipStack(cardEl, c.id);
+  });
+}
+
+function cleanupRemoteDragOverlays(){
+  Object.keys(remoteDragging || {}).forEach(uid => removeRemoteDragFloat(uid));
+  remoteDragging = {};
+}
+
+function subscribeDraggingCards(){
+  if (remoteDragUnsub){
+    remoteDragUnsub();
+    remoteDragUnsub = null;
+  }
+  const base = dragStateBasePath();
+  if (!base) return;
+  const dragRef = ref(db, base);
+  onDisconnect(ref(db, `${base}/${state.userId}`)).remove().catch(()=>{});
+  remoteDragUnsub = onValue(dragRef, snap => {
+    remoteDragging = snap.val() || {};
+    renderRemoteDraggingOverlays();
+  });
+}
+
 async function commitReorderAndMaybeEndTurn(newArr, changed, movedCardId){
   if (!state.roomCode) return;
 
@@ -2359,6 +2464,12 @@ function beginDragFromCard(cardEl, cardObj, idx, clientX, clientY, pointerId){
   renderCardChipStack(floatEl, cardObj.id);
 
   moveDragFloat(clientX, clientY);
+  pushMyDragState({
+    cardId: String(cardObj.id),
+    x: clientX - dragOffsetX,
+    y: clientY - dragOffsetY,
+    at: Date.now()
+  }).catch(() => {});
 
   requestAnimationFrame(() => {
     renderCenterRow();
@@ -2376,6 +2487,12 @@ function handleDraggingPointerMove(e){
   if (dragPointerId !== null && e.pointerId !== dragPointerId) return;
   e.preventDefault();
   moveDragFloat(e.clientX, e.clientY);
+  schedulePushMyDragMove({
+    cardId: String(draggingId),
+    x: e.clientX - dragOffsetX,
+    y: e.clientY - dragOffsetY,
+    at: Date.now()
+  });
   scheduleDragOverUpdate(dragCardCenterXFromPointer(e.clientX));
 }
 
@@ -2459,6 +2576,7 @@ function cleanupDrag(){
 
   hideInsertMarker();
   removeDragFloat();
+  clearMyDragState();
   document.documentElement.style.userSelect = '';
 
   updateCenterCardSizing();
@@ -2682,6 +2800,7 @@ function renderCenterRow(){
   }
 
   applyVisualShift();
+  renderRemoteDraggingOverlays();
 
   if (revealDir && revealStartedAt()){
     ensureRevealTicker();
@@ -2805,6 +2924,7 @@ btnJoin.addEventListener('click', async () => {
   subscribeHostState();
   subscribePlayers();
   subscribeCenterCards();
+  subscribeDraggingCards();
   subscribeChipPlacements();
   subscribeCircleChips();
   subscribeGame();
@@ -3178,6 +3298,11 @@ function renderPlayerLines(players){
   });
 }
 
+
+window.addEventListener('beforeunload', () => {
+  clearMyDragState();
+});
+
 kickDialog.addEventListener('click', (e) => {
   if (e.target === kickDialog) {
     kickDialog.classList.add('hidden');
@@ -3341,7 +3466,8 @@ btnResetRoom.addEventListener('click', async () => {
     remove(ref(db, `${base}/centerCards`)),
     remove(ref(db, `${base}/chipPlacements`)),
     remove(ref(db, `${base}/circleChips`)),
-    remove(ref(db, `${base}/game`))
+    remove(ref(db, `${base}/game`)),
+    remove(ref(db, `${base}/draggingCards`))
   ]);
 
   state.seatedTable = null;
