@@ -2165,15 +2165,14 @@ function calcRawInsertIndexFromBoundaries(clientX, boundaries, slotCount){
   return raw;
 }
 
-function getNeighborCardCenterFromBoundary(slots, boundaryIdx, side){
+function getNeighborCardRectFromBoundary(slots, boundaryIdx, side){
   let i = (side === 'left') ? (boundaryIdx - 1) : boundaryIdx;
   const step = (side === 'left') ? -1 : +1;
 
   while (i >= 0 && i < slots.length){
     const el = slots[i];
     if (el?.classList?.contains('center-card')){
-      const r = el.getBoundingClientRect();
-      return r.left + (r.width / 2);
+      return el.getBoundingClientRect();
     }
     i += step;
   }
@@ -2187,14 +2186,19 @@ function calcInsertIndexByEdgeThreshold(prevInsertIndex, clientX, slots){
   const dragW = s.cardW || 0;
   const dragLeft = clientX - (dragW / 2);
   const dragRight = clientX + (dragW / 2);
+  const dragCenter = clientX;
 
   const minIdx = 1;
   const maxIdx = Math.max(1, slots.length - 1);
 
   while (idx < maxIdx){
-    const rightCardCenter = getNeighborCardCenterFromBoundary(slots, idx, 'right');
-    if (rightCardCenter == null) break;
-    if (dragRight >= rightCardCenter){
+    const rightCardRect = getNeighborCardRectFromBoundary(slots, idx, 'right');
+    if (!rightCardRect) break;
+
+    const rightCardCenter = rightCardRect.left + (rightCardRect.width / 2);
+    const rightCardLeft = rightCardRect.left;
+
+    if (dragRight >= rightCardCenter || dragCenter >= rightCardLeft){
       idx += 1;
       continue;
     }
@@ -2202,9 +2206,13 @@ function calcInsertIndexByEdgeThreshold(prevInsertIndex, clientX, slots){
   }
 
   while (idx > minIdx){
-    const leftCardCenter = getNeighborCardCenterFromBoundary(slots, idx, 'left');
-    if (leftCardCenter == null) break;
-    if (dragLeft <= leftCardCenter){
+    const leftCardRect = getNeighborCardRectFromBoundary(slots, idx, 'left');
+    if (!leftCardRect) break;
+
+    const leftCardCenter = leftCardRect.left + (leftCardRect.width / 2);
+    const leftCardRight = leftCardRect.right;
+
+    if (dragLeft <= leftCardCenter || dragCenter <= leftCardRight){
       idx -= 1;
       continue;
     }
