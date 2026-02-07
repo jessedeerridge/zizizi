@@ -2165,32 +2165,58 @@ function calcRawInsertIndexFromBoundaries(clientX, boundaries, slotCount){
   return raw;
 }
 
-function applyInsertHysteresis(raw, prev, clientX, boundaries){
-  if (typeof prev !== 'number') return raw;
-  if (raw === prev) return raw;
+function getCardCenterXFromSlots(slots, startIdx, dir){
+  let i = startIdx;
+  while (i >= 0 && i < slots.length){
+    const el = slots[i];
+    if (el?.classList?.contains('center-card')){
+      const r = el.getBoundingClientRect();
+      return r.left + (r.width / 2);
+    }
+    i += dir;
+  }
+  return null;
+}
 
-  const next = clamp(raw, 0, boundaries.length - 1);
-  const safePrev = clamp(prev, 0, boundaries.length - 1);
-  const step = next - safePrev;
+function calcInsertIndexStepByStep(raw, prevInsertIndex, clientX, slots){
+  const safeRaw = clampInsertIndex(raw);
+  if (typeof prevInsertIndex !== 'number') return safeRaw;
 
-  if (Math.abs(step) !== 1) return raw;
-
-  const boundary = boundaries[Math.max(next, safePrev)];
-  if (typeof boundary !== 'number') return raw;
+  let idx = clampInsertIndex(prevInsertIndex);
+  if (idx === safeRaw) return idx;
 
   const s = (draggingId && frozenSizing) ? frozenSizing : computeBaseSizing();
-  const RIGHT_COMPENSATION_PX = Math.round((s.cardW || 0) * 0.95);
+  const dragW = s.cardW || 0;
+  const dragLeft = clientX - (dragW / 2);
+  const dragRight = clientX + (dragW / 2);
 
-  const HYSTERESIS_FORWARD_PX = -RIGHT_COMPENSATION_PX;
-  const HYSTERESIS_BACKWARD_PX = 10;
+  while (idx < safeRaw){
+    if (idx >= slots.length - 1) break;
 
-  const forwardThreshold = boundary + HYSTERESIS_FORWARD_PX;
-  const backwardThreshold = boundary - HYSTERESIS_BACKWARD_PX;
+    const leftCardCenter = getCardCenterXFromSlots(slots, idx, -1);
+    if (leftCardCenter == null) break;
 
-  if (step > 0 && clientX < forwardThreshold) return safePrev;
-  if (step < 0 && clientX > backwardThreshold) return safePrev;
+    if (dragLeft > (leftCardCenter - 5)){
+      idx += 1;
+      continue;
+    }
+    break;
+  }
 
-  return raw;
+  while (idx > safeRaw){
+    if (idx <= 1) break;
+
+    const rightCardCenter = getCardCenterXFromSlots(slots, idx - 1, +1);
+    if (rightCardCenter == null) break;
+
+    if (dragRight < (rightCardCenter + 5)){
+      idx -= 1;
+      continue;
+    }
+    break;
+  }
+
+  return clampInsertIndex(idx);
 }
 
 function calcInsertIndexFromClientX(clientX, prevInsertIndex){
@@ -2201,8 +2227,7 @@ function calcInsertIndexFromClientX(clientX, prevInsertIndex){
   const boundaries = getSlotBoundariesFromLayout(slots, rowRect);
 
   const raw = calcRawInsertIndexFromBoundaries(clientX, boundaries, slots.length);
-  const stabilized = applyInsertHysteresis(raw, prevInsertIndex, clientX, boundaries);
-  return clampInsertIndex(stabilized);
+  return calcInsertIndexStepByStep(raw, prevInsertIndex, clientX, slots);
 }
 
 function updateInsertMarkerFromIndex(idx){
