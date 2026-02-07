@@ -2166,72 +2166,76 @@ function calcRawInsertIndexFromBoundaries(clientX, boundaries, slotCount){
 }
 
 const DRAG_INSERT_TUNING = {
-  // 右へドラッグ時に判定をどれだけ早めるか（0.5 = カード半分）
-  RIGHT_PROBE_RATIO: 0.30,
-  // 左へドラッグ時に判定をどれだけ早めるか（0.5 = カード半分）
-  LEFT_PROBE_RATIO: 0.00,
-
-  // 境界を跨いだ後の戻りにくさ（px）。大きいほどその方向に進みやすい。
-  RIGHT_STICKINESS_PX: 10,
-  LEFT_STICKINESS_PX: 10,
+  // 左右とも「隣カード中心から何px超えたらスライドするか」
+  EDGE_TRIGGER_PX: 5,
 };
 
-function applyDirectionalProbeBias(clientX){
-  if (!draggingId || draggingFromIndex < 0) return clientX;
-
-  const slots = getSlotElements();
-  const anchor = slots[draggingFromIndex];
-  if (!anchor) return clientX;
-
-  const anchorRect = anchor.getBoundingClientRect();
-  const anchorCenterX = anchorRect.left + (anchorRect.width / 2);
-
+function getDraggedCardEdgesFromCenterX(centerX){
   const s = (draggingId && frozenSizing) ? frozenSizing : computeBaseSizing();
-  const stepPx = (s.cardW || 0) + (s.gap || 0);
-
-  const rightBias = stepPx * Number(DRAG_INSERT_TUNING.RIGHT_PROBE_RATIO || 0);
-  const leftBias = stepPx * Number(DRAG_INSERT_TUNING.LEFT_PROBE_RATIO || 0);
-
-  if (clientX >= anchorCenterX) return clientX + rightBias;
-  return clientX - leftBias;
+  const half = (s.cardW || 0) / 2;
+  return {
+    left: centerX - half,
+    right: centerX + half,
+  };
 }
 
-function applyInsertHysteresis(raw, prev, clientX, boundaries){
-  if (typeof prev !== 'number') return raw;
-  if (raw === prev) return raw;
+function getSlotRects(slots){
+  return slots.map(el => el.getBoundingClientRect());
+}
 
-  const next = clamp(raw, 0, boundaries.length - 1);
-  const safePrev = clamp(prev, 0, boundaries.length - 1);
-  const step = next - safePrev;
+function findNextCardSlotIndex(slots, fromIdxExclusive){
+  for (let i = fromIdxExclusive + 1; i < slots.length; i++){
+    if (slots[i]?.classList?.contains('center-card')) return i;
+  }
+  return -1;
+}
 
-  if (Math.abs(step) !== 1) return raw;
-
-  const boundary = boundaries[Math.max(next, safePrev)];
-  if (typeof boundary !== 'number') return raw;
-
-  const rightStickiness = Number(DRAG_INSERT_TUNING.RIGHT_STICKINESS_PX || 0);
-  const leftStickiness = Number(DRAG_INSERT_TUNING.LEFT_STICKINESS_PX || 0);
-
-  const forwardThreshold = boundary - rightStickiness;
-  const backwardThreshold = boundary + leftStickiness;
-
-  if (step > 0 && clientX < forwardThreshold) return safePrev;
-  if (step < 0 && clientX > backwardThreshold) return safePrev;
-
-  return raw;
+function findPrevCardSlotIndex(slots, fromIdxExclusive){
+  for (let i = fromIdxExclusive - 1; i >= 0; i--){
+    if (slots[i]?.classList?.contains('center-card')) return i;
+  }
+  return -1;
 }
 
 function calcInsertIndexFromClientX(clientX, prevInsertIndex){
   const slots = getSlotElements();
   if (slots.length === 0) return 0;
 
-  const rowRect = centerRowEl.getBoundingClientRect();
-  const boundaries = getSlotBoundariesFromLayout(slots, rowRect);
-  const probeX = applyDirectionalProbeBias(clientX);
+  const slotRects = getSlotRects(slots);
+  const triggerPx = Number(DRAG_INSERT_TUNING.EDGE_TRIGGER_PX || 0);
+  const edges = getDraggedCardEdgesFromCenterX(clientX);
 
-  const raw = calcRawInsertIndexFromBoundaries(probeX, boundaries, slots.length);
-  const stabilized = applyInsertHysteresis(raw, prevInsertIndex, probeX, boundaries);
-  return clampInsertIndex(stabilized);
+  let idx = (typeof prevInsertIndex === 'number')
+    ? clampInsertIndex(prevInsertIndex)
+    : clampInsertIndex(draggingFromIndex);
+
+  // 右方向：ドラッグカード右辺が「右カード中心+5」を超えたら右へ1つ進める。
+  for (let guard = 0; guard < slots.length; guard++){
+    const rightCardSlot = findNextCardSlotIndex(slots, idx - 1);
+    if (rightCardSlot < 0) break;
+
+    const centerX = slotRects[rightCardSlot].left + (slotRects[rightCardSlot].width / 2);
+    if (edges.right <= (centerX + triggerPx)) break;
+
+    const nextIdx = clampInsertIndex(rightCardSlot + 1);
+    if (nextIdx === idx) break;
+    idx = nextIdx;
+  }
+
+  // 左方向：ドラッグカード左辺が「左カード中心-5」を超えたら左へ1つ進める。
+  for (let guard = 0; guard < slots.length; guard++){
+    const leftCardSlot = findPrevCardSlotIndex(slots, idx);
+    if (leftCardSlot < 0) break;
+
+    const centerX = slotRects[leftCardSlot].left + (slotRects[leftCardSlot].width / 2);
+    if (edges.left >= (centerX - triggerPx)) break;
+
+    const nextIdx = clampInsertIndex(leftCardSlot);
+    if (nextIdx === idx) break;
+    idx = nextIdx;
+  }
+
+  return clampInsertIndex(idx);
 }
 
 function updateInsertMarkerFromIndex(idx){
