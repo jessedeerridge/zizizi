@@ -2185,7 +2185,6 @@ function calcInsertIndexByContactPoints(prevInsertIndex, clientX, slots){
   const s = (draggingId && frozenSizing) ? frozenSizing : computeBaseSizing();
   const dragW = s.cardW || 0;
   const dragLeft = clientX - (dragW / 2);
-  const dragCenter = clientX;
   const dragRight = clientX + (dragW / 2);
 
   const minIdx = 1;
@@ -2195,15 +2194,8 @@ function calcInsertIndexByContactPoints(prevInsertIndex, clientX, slots){
     const rightCardRect = getNeighborCardRectFromBoundary(slots, idx, 'right');
     if (!rightCardRect) break;
 
-    const rightCardLeft = rightCardRect.left;
     const rightCardCenter = rightCardRect.left + (rightCardRect.width / 2);
-    const rightCardRight = rightCardRect.right;
-
-    const rightEdgeContact = (dragRight >= rightCardLeft);
-    const centerContact = (dragCenter >= rightCardCenter);
-    const leftEdgeContact = (dragLeft >= rightCardRight);
-
-    if (rightEdgeContact || centerContact || leftEdgeContact){
+    if (dragLeft >= rightCardCenter){
       idx += 1;
       continue;
     }
@@ -2214,15 +2206,8 @@ function calcInsertIndexByContactPoints(prevInsertIndex, clientX, slots){
     const leftCardRect = getNeighborCardRectFromBoundary(slots, idx, 'left');
     if (!leftCardRect) break;
 
-    const leftCardRight = leftCardRect.right;
     const leftCardCenter = leftCardRect.left + (leftCardRect.width / 2);
-    const leftCardLeft = leftCardRect.left;
-
-    const leftEdgeContact = (dragLeft <= leftCardRight);
-    const centerContact = (dragCenter <= leftCardCenter);
-    const rightEdgeContact = (dragRight <= leftCardLeft);
-
-    if (leftEdgeContact || centerContact || rightEdgeContact){
+    if (dragRight <= leftCardCenter){
       idx -= 1;
       continue;
     }
