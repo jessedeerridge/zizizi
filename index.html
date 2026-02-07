@@ -2277,6 +2277,10 @@ function moveDragFloat(clientX, clientY){
   const y = clientY - dragOffsetY;
   dragFloatEl.style.transform = `translate(${x}px, ${y}px)`;
 }
+function dragCardCenterXFromPointer(clientX){
+  const s = (draggingId && frozenSizing) ? frozenSizing : computeBaseSizing();
+  return clientX - dragOffsetX + (s.cardW / 2);
+}
 function removeDragFloat(){
   if (!dragFloatEl) return;
   dragFloatEl.remove();
@@ -2342,14 +2346,14 @@ function handleDraggingPointerMove(e){
   if (dragPointerId !== null && e.pointerId !== dragPointerId) return;
   e.preventDefault();
   moveDragFloat(e.clientX, e.clientY);
-  scheduleDragOverUpdate(e.clientX);
+  scheduleDragOverUpdate(dragCardCenterXFromPointer(e.clientX));
 }
 
 async function handleDraggingPointerUp(e){
   if (!draggingId) return;
   if (dragPointerId !== null && e.pointerId !== dragPointerId) return;
   e.preventDefault();
-  await finishDrag(e.clientX);
+  await finishDrag(dragCardCenterXFromPointer(e.clientX));
 }
 
 function handleDraggingPointerCancel(e){
@@ -2362,7 +2366,7 @@ window.addEventListener('pointermove', handleDraggingPointerMove, { passive:fals
 window.addEventListener('pointerup', handleDraggingPointerUp, { passive:false });
 window.addEventListener('pointercancel', handleDraggingPointerCancel, { passive:false });
 
-async function finishDrag(clientX){
+async function finishDrag(probeX){
   if (!draggingId || isCommitting) return;
   isCommitting = true;
 
@@ -2373,7 +2377,7 @@ async function finishDrag(clientX){
 
   const fromId = draggingId;
 
-  const rawIdx = (typeof insertIndex === 'number') ? insertIndex : calcInsertIndexFromClientX(clientX, insertIndex);
+  const rawIdx = (typeof insertIndex === 'number') ? insertIndex : calcInsertIndexFromClientX(probeX, insertIndex);
   const idx = clampInsertIndex(rawIdx);
 
   const visible = getRenderableCenterCards();
