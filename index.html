@@ -2166,71 +2166,68 @@ function calcRawInsertIndexFromBoundaries(clientX, boundaries, slotCount){
 }
 
 const DRAG_INSERT_TUNING = {
-  // 左右とも「隣カード中心から何px超えたらスライドするか」
+  // スライド閾値: カード辺が隣カード中心をこのpxだけ越えたら移動
   EDGE_TRIGGER_PX: 5,
 };
 
-function getDraggedCardEdgesFromCenterX(centerX){
+function getDraggedCardEdgesFromPointerX(pointerClientX){
   const s = (draggingId && frozenSizing) ? frozenSizing : computeBaseSizing();
-  const half = (s.cardW || 0) / 2;
+  const left = pointerClientX - dragOffsetX;
+  const width = (s.cardW || 0);
   return {
-    left: centerX - half,
-    right: centerX + half,
+    left,
+    right: left + width,
   };
 }
 
-function getSlotRects(slots){
-  return slots.map(el => el.getBoundingClientRect());
+function getCenterCardSlotsWithRect(){
+  return getSlotElements()
+    .map((slotEl, slotIdx) => ({ slotEl, slotIdx }))
+    .filter(x => x.slotEl?.classList?.contains('center-card'))
+    .map(x => ({
+      slotIdx: x.slotIdx,
+      rect: x.slotEl.getBoundingClientRect(),
+    }));
 }
 
-function findRightCardSlotAtInsertIndex(slots, insertIdx){
-  for (let i = insertIdx; i < slots.length; i++){
-    if (slots[i]?.classList?.contains('center-card')) return i;
-  }
-  return -1;
+function findCardBySlot(cards, slotIdx){
+  return cards.find(c => c.slotIdx === slotIdx) || null;
 }
 
-function findLeftCardSlotAtInsertIndex(slots, insertIdx){
-  for (let i = insertIdx - 1; i >= 0; i--){
-    if (slots[i]?.classList?.contains('center-card')) return i;
-  }
-  return -1;
-}
-
-function calcInsertIndexFromClientX(clientX, prevInsertIndex){
+function calcInsertIndexFromClientX(pointerClientX, prevInsertIndex){
   const slots = getSlotElements();
   if (slots.length === 0) return 0;
 
-  const slotRects = getSlotRects(slots);
+  const cards = getCenterCardSlotsWithRect();
+  if (!cards.length) return clampInsertIndex(0);
+
   const triggerPx = Number(DRAG_INSERT_TUNING.EDGE_TRIGGER_PX || 0);
-  const edges = getDraggedCardEdgesFromCenterX(clientX);
+  const edges = getDraggedCardEdgesFromPointerX(pointerClientX);
 
   let idx = (typeof prevInsertIndex === 'number')
     ? clampInsertIndex(prevInsertIndex)
     : clampInsertIndex(draggingFromIndex);
 
-  // 右方向：ドラッグカード右辺が「右カード中心+5」を超えたら右へ1つ進める。
   for (let guard = 0; guard < slots.length; guard++){
-    const rightCardSlot = findRightCardSlotAtInsertIndex(slots, idx);
-    if (rightCardSlot < 0) break;
+    const rightCard = findCardBySlot(cards, idx);
+    if (!rightCard) break;
 
-    const centerX = slotRects[rightCardSlot].left + (slotRects[rightCardSlot].width / 2);
-    if (edges.right <= (centerX + triggerPx)) break;
+    const rightCenter = rightCard.rect.left + (rightCard.rect.width / 2);
+    if (edges.right <= (rightCenter + triggerPx)) break;
 
-    const nextIdx = clampInsertIndex(rightCardSlot + 1);
+    const nextIdx = clampInsertIndex(rightCard.slotIdx + 1);
     if (nextIdx === idx) break;
     idx = nextIdx;
   }
 
-  // 左方向：ドラッグカード左辺が「左カード中心-5」を超えたら左へ1つ進める。
   for (let guard = 0; guard < slots.length; guard++){
-    const leftCardSlot = findLeftCardSlotAtInsertIndex(slots, idx);
-    if (leftCardSlot < 0) break;
+    const leftCard = findCardBySlot(cards, idx - 1);
+    if (!leftCard) break;
 
-    const centerX = slotRects[leftCardSlot].left + (slotRects[leftCardSlot].width / 2);
-    if (edges.left >= (centerX - triggerPx)) break;
+    const leftCenter = leftCard.rect.left + (leftCard.rect.width / 2);
+    if (edges.left >= (leftCenter - triggerPx)) break;
 
-    const nextIdx = clampInsertIndex(leftCardSlot);
+    const nextIdx = clampInsertIndex(leftCard.slotIdx);
     if (nextIdx === idx) break;
     idx = nextIdx;
   }
@@ -2314,10 +2311,6 @@ function moveDragFloat(clientX, clientY){
   const y = clientY - dragOffsetY;
   dragFloatEl.style.transform = `translate(${x}px, ${y}px)`;
 }
-function dragCardCenterXFromPointer(clientX){
-  const s = (draggingId && frozenSizing) ? frozenSizing : computeBaseSizing();
-  return clientX - dragOffsetX + (s.cardW / 2);
-}
 function removeDragFloat(){
   if (!dragFloatEl) return;
   dragFloatEl.remove();
@@ -2383,14 +2376,14 @@ function handleDraggingPointerMove(e){
   if (dragPointerId !== null && e.pointerId !== dragPointerId) return;
   e.preventDefault();
   moveDragFloat(e.clientX, e.clientY);
-  scheduleDragOverUpdate(dragCardCenterXFromPointer(e.clientX));
+  scheduleDragOverUpdate(e.clientX);
 }
 
 async function handleDraggingPointerUp(e){
   if (!draggingId) return;
   if (dragPointerId !== null && e.pointerId !== dragPointerId) return;
   e.preventDefault();
-  await finishDrag(dragCardCenterXFromPointer(e.clientX));
+  await finishDrag(e.clientX);
 }
 
 function handleDraggingPointerCancel(e){
@@ -2403,7 +2396,7 @@ window.addEventListener('pointermove', handleDraggingPointerMove, { passive:fals
 window.addEventListener('pointerup', handleDraggingPointerUp, { passive:false });
 window.addEventListener('pointercancel', handleDraggingPointerCancel, { passive:false });
 
-async function finishDrag(probeX){
+async function finishDrag(pointerClientX){
   if (!draggingId || isCommitting) return;
   isCommitting = true;
 
@@ -2414,7 +2407,7 @@ async function finishDrag(probeX){
 
   const fromId = draggingId;
 
-  const rawIdx = (typeof insertIndex === 'number') ? insertIndex : calcInsertIndexFromClientX(probeX, insertIndex);
+  const rawIdx = (typeof insertIndex === 'number') ? insertIndex : calcInsertIndexFromClientX(pointerClientX, insertIndex);
   const idx = clampInsertIndex(rawIdx);
 
   const visible = getRenderableCenterCards();
