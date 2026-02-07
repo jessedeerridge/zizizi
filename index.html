@@ -2194,7 +2194,7 @@ function calcInsertIndexByEdgeThreshold(prevInsertIndex, clientX, slots){
   while (idx < maxIdx){
     const rightCardCenter = getNeighborCardCenterFromBoundary(slots, idx, 'right');
     if (rightCardCenter == null) break;
-    if (dragLeft >= rightCardCenter){
+    if (dragRight >= rightCardCenter){
       idx += 1;
       continue;
     }
@@ -2204,7 +2204,7 @@ function calcInsertIndexByEdgeThreshold(prevInsertIndex, clientX, slots){
   while (idx > minIdx){
     const leftCardCenter = getNeighborCardCenterFromBoundary(slots, idx, 'left');
     if (leftCardCenter == null) break;
-    if (dragRight <= leftCardCenter){
+    if (dragLeft <= leftCardCenter){
       idx -= 1;
       continue;
     }
