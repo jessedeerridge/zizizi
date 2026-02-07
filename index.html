@@ -2193,6 +2193,16 @@ function applyInsertHysteresis(raw, prev, clientX, boundaries){
   return raw;
 }
 
+function normalizeInsertIndexForDragging(raw){
+  if (typeof raw !== 'number') return raw;
+  if (!draggingId || draggingFromIndex < 0) return raw;
+
+  // 右方向へ移動中は「ドラッグ中カードのゴースト枠」を1つ飛ばして評価する。
+  // これで左移動と同様、隣カードの中間あたりでスライド判定が入る。
+  if (raw > draggingFromIndex) return raw + 1;
+  return raw;
+}
+
 function calcInsertIndexFromClientX(clientX, prevInsertIndex){
   const slots = getSlotElements();
   if (slots.length === 0) return 0;
@@ -2202,7 +2212,8 @@ function calcInsertIndexFromClientX(clientX, prevInsertIndex){
 
   const raw = calcRawInsertIndexFromBoundaries(clientX, boundaries, slots.length);
   const stabilized = applyInsertHysteresis(raw, prevInsertIndex, clientX, boundaries);
-  return clampInsertIndex(stabilized);
+  const normalized = normalizeInsertIndexForDragging(stabilized);
+  return clampInsertIndex(normalized);
 }
 
 function updateInsertMarkerFromIndex(idx){
