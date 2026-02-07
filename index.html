@@ -775,6 +775,7 @@ const state = {
   helpCards: [],
   chipPlacements: {},
   circleChips: {},
+  sharedDrag: null,
   game: null,
   players: []
 };
@@ -1009,6 +1010,8 @@ let dragOffsetX = 0;
 let dragOffsetY = 0;
 let isCommitting = false;
 let dragSourceEl = null;
+let dragSyncQueued = null;
+let dragSyncTimer = null;
 
 let pendingCardDown = null;
 
@@ -2074,6 +2077,20 @@ function subscribeCenterCards(){
   });
 }
 
+function subscribeSharedDrag(){
+  const dRef = ref(db, `rooms/${state.roomCode}/centerDrag`);
+  onValue(dRef, snap => {
+    const v = snap.val() || null;
+    state.sharedDrag = v;
+
+    if (draggingId) return;
+
+    renderCenterRow();
+    updatePlayerLinesGeometry();
+    renderPlayerLines(state.players || []);
+  });
+}
+
 function subscribeHelpCards(){
   const hcRef = ref(db, `rooms/${state.roomCode}/helpCards`);
   onValue(hcRef, snap => {
@@ -2102,7 +2119,69 @@ function getStepPx(){
 }
 
 function getRenderableCenterCards(){
+  if (!draggingId && state.sharedDrag?.active && Array.isArray(state.sharedDrag.cardsPreview)){
+    return state.sharedDrag.cardsPreview.filter(Boolean);
+  }
   return (state.centerCards || []).filter(Boolean);
+}
+
+function buildPreviewCardsForInsert(cards, cardId, idx){
+  const arr = (cards || []).filter(Boolean).map(x => ({ ...x }));
+  const fromIndex = arr.findIndex(x => x && String(x.id) === String(cardId));
+  if (fromIndex < 0) return arr;
+
+  const [moved] = arr.splice(fromIndex, 1);
+  let adjustedIndex = (fromIndex < idx) ? (idx - 1) : idx;
+
+  const lenAfter = arr.length + 1;
+  if (lenAfter >= 3){
+    adjustedIndex = clamp(adjustedIndex, 1, lenAfter - 2);
+  }
+
+  arr.splice(adjustedIndex, 0, moved);
+  return arr;
+}
+
+function flushDragSync(){
+  if (!dragSyncQueued || !state.roomCode) return;
+  const payload = dragSyncQueued;
+  dragSyncQueued = null;
+  update(ref(db, `rooms/${state.roomCode}/centerDrag`), payload).catch(() => {});
+}
+
+function scheduleDragSync(payload){
+  dragSyncQueued = { ...(dragSyncQueued || {}), ...payload, updatedAt: Date.now() };
+  if (dragSyncTimer) return;
+  dragSyncTimer = setTimeout(() => {
+    dragSyncTimer = null;
+    flushDragSync();
+  }, 70);
+}
+
+function publishSharedDragState(currentInsertIndex){
+  if (!draggingId || !state.roomCode) return;
+  const cards = (state.centerCards || []).filter(Boolean);
+  const idx = clampInsertIndex(currentInsertIndex);
+  const preview = buildPreviewCardsForInsert(cards, draggingId, idx);
+
+  scheduleDragSync({
+    active: true,
+    playerId: state.userId,
+    playerName: state.userName || '名無し',
+    cardId: draggingId,
+    insertIndex: idx,
+    cardsPreview: preview
+  });
+}
+
+function clearSharedDragState(){
+  if (!state.roomCode) return;
+  if (dragSyncTimer){
+    clearTimeout(dragSyncTimer);
+    dragSyncTimer = null;
+  }
+  dragSyncQueued = null;
+  remove(ref(db, `rooms/${state.roomCode}/centerDrag`)).catch(() => {});
 }
 
 function applyVisualShift(){
@@ -2268,6 +2347,7 @@ function scheduleDragOverUpdate(clientX){
       insertIndex = idx;
       updateInsertMarkerFromIndex(insertIndex);
       applyVisualShift();
+      publishSharedDragState(insertIndex);
     }
   });
 }
@@ -2366,6 +2446,8 @@ function beginDragFromCard(cardEl, cardObj, idx, clientX, clientY, pointerId){
     applyVisualShift();
   });
 
+  publishSharedDragState(insertIndex);
+
   dragPointerId = pointerId;
   try { cardEl.setPointerCapture(dragPointerId); } catch {}
   document.documentElement.style.userSelect = 'none';
@@ -2419,17 +2501,7 @@ async function finishDrag(probeX){
     return;
   }
 
-  const arr = [...visible];
-  const [moved] = arr.splice(fromIndex, 1);
-
-  let adjustedIndex = (fromIndex < idx) ? (idx - 1) : idx;
-
-  const lenAfter = arr.length + 1;
-  if (lenAfter >= 3){
-    adjustedIndex = clamp(adjustedIndex, 1, lenAfter - 2);
-  }
-
-  arr.splice(adjustedIndex, 0, moved);
+  const arr = buildPreviewCardsForInsert(visible, fromId, idx);
 
   const afterIds = idsOf(arr);
   const changed = (beforeIds !== afterIds);
@@ -2456,6 +2528,7 @@ function cleanupDrag(){
   dragPointerId = null;
   dragSourceEl = null;
   isCommitting = false;
+  clearSharedDragState();
 
   hideInsertMarker();
   removeDragFloat();
@@ -2553,6 +2626,7 @@ function renderCenterRow(){
   const rp = state.game?.revealPhase || null;
   const revealActive = !!(rp && rp.active);
   const revealDir = revealChosen();
+  const sharedDrag = (!draggingId && state.sharedDrag?.active) ? state.sharedDrag : null;
 
   cards.forEach((c, idx) => {
     if (draggingId && c.id === draggingId){
@@ -2573,6 +2647,10 @@ function renderCenterRow(){
     el.style.backgroundImage = `url('${centerRowCardBgUrl(c.label, { faceUp })}')`;
     el.dataset.id = c.id;
     el.dataset.index = String(idx);
+
+    if (sharedDrag && sharedDrag.cardId && String(sharedDrag.cardId) === String(c.id)){
+      el.classList.add('end-pulsing');
+    }
 
     renderCardChipStack(el, c.id);
 
@@ -2805,6 +2883,7 @@ btnJoin.addEventListener('click', async () => {
   subscribeHostState();
   subscribePlayers();
   subscribeCenterCards();
+  subscribeSharedDrag();
   subscribeChipPlacements();
   subscribeCircleChips();
   subscribeGame();
