@@ -1,4 +1,4 @@
-<!DOCTYPE html>  
+<!DOCTYPE html>
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
@@ -485,6 +485,9 @@
     overflow: visible;
   }
 
+
+  .drag-float.remote{ opacity:.95; z-index:9300; }
+
   /* ✅ カード移動時のinsertMarkerを透明化 */
   #insertMarker{
     position:absolute;
@@ -775,6 +778,7 @@ const state = {
   helpCards: [],
   chipPlacements: {},
   circleChips: {},
+  dragReorder: null,
   game: null,
   players: []
 };
@@ -1009,6 +1013,9 @@ let dragOffsetX = 0;
 let dragOffsetY = 0;
 let isCommitting = false;
 let dragSourceEl = null;
+let dragSyncWriteRaf = false;
+let dragSyncLastWriteAt = 0;
+let remoteDragFloatEl = null;
 
 let pendingCardDown = null;
 
@@ -1114,6 +1121,137 @@ function canDragReorderNowForCard(cardId){
   return String(cardId) === String(allowed);
 }
 
+function setDragReorderState(next){
+  if (!state.roomCode) return;
+  if (state.dragReorder === next) return;
+  state.dragReorder = next;
+}
+
+async function publishDragReorderStart(cardObj, idx, clientX){
+  if (!state.roomCode || !cardObj) return;
+  const payload = {
+    active: true,
+    playerId: state.userId,
+    cardId: String(cardObj.id),
+    fromIndex: Number(idx),
+    insertIndex: Number(clampInsertIndex(idx)),
+    pointerX: Number(clientX),
+    updatedAt: Date.now()
+  };
+  setDragReorderState(payload);
+  await set(ref(db, `rooms/${state.roomCode}/dragReorder`), payload);
+}
+
+function queueDragReorderMove(clientX, idx){
+  if (!state.roomCode || !draggingId) return;
+  const now = Date.now();
+  if (now - dragSyncLastWriteAt < 40) return;
+  if (dragSyncWriteRaf) return;
+  dragSyncWriteRaf = true;
+  requestAnimationFrame(async () => {
+    dragSyncWriteRaf = false;
+    if (!state.roomCode || !draggingId) return;
+    const payload = {
+      active: true,
+      playerId: state.userId,
+      cardId: String(draggingId),
+      fromIndex: Number(draggingFromIndex),
+      insertIndex: Number(idx),
+      pointerX: Number(clientX),
+      updatedAt: Date.now()
+    };
+    setDragReorderState(payload);
+    dragSyncLastWriteAt = Date.now();
+    try {
+      await set(ref(db, `rooms/${state.roomCode}/dragReorder`), payload);
+    } catch {}
+  });
+}
+
+async function publishDragReorderStop(){
+  if (!state.roomCode) return;
+  setDragReorderState(null);
+  dragSyncLastWriteAt = 0;
+  dragSyncWriteRaf = false;
+  await remove(ref(db, `rooms/${state.roomCode}/dragReorder`));
+}
+
+function ensureRemoteDragFloat(){
+  if (remoteDragFloatEl) return remoteDragFloatEl;
+  remoteDragFloatEl = document.createElement('div');
+  remoteDragFloatEl.className = 'drag-float remote';
+  document.body.appendChild(remoteDragFloatEl);
+  return remoteDragFloatEl;
+}
+
+function removeRemoteDragFloat(){
+  if (!remoteDragFloatEl) return;
+  remoteDragFloatEl.remove();
+  remoteDragFloatEl = null;
+}
+
+function renderRemoteDragFloat(drag){
+  if (!drag || !drag.active || !drag.cardId || !state.roomCode) { removeRemoteDragFloat(); return; }
+  if (drag.playerId === state.userId) { removeRemoteDragFloat(); return; }
+
+  const card = (state.centerCards || []).find(x => x && String(x.id) === String(drag.cardId));
+  if (!card) { removeRemoteDragFloat(); return; }
+
+  const cardEl = centerRowEl.querySelector(`.center-card[data-id="${CSS.escape(String(drag.cardId))}"]`);
+  if (!cardEl) { removeRemoteDragFloat(); return; }
+
+  const floatEl = ensureRemoteDragFloat();
+  floatEl.textContent = String(card.label ?? '');
+  floatEl.style.backgroundImage = `url('${centerRowCardBgUrl(card.label, { faceUp:false })}')`;
+  syncDragFloatStyleFromCard(cardEl, floatEl);
+  renderCardChipStack(floatEl, card.id);
+
+  const rect = cardEl.getBoundingClientRect();
+  const s = computeBaseSizing();
+  const cardW = s.cardW || rect.width || 0;
+  const x = Number(drag.pointerX || (rect.left + rect.width/2)) - (cardW / 2);
+  const y = rect.top;
+  floatEl.style.transform = `translate(${x}px, ${y}px)`;
+}
+
+function applyRemoteDragVisual(){
+  const drag = state.dragReorder;
+  if (!drag || !drag.active || !drag.cardId || drag.playerId === state.userId){
+    removeRemoteDragFloat();
+    if (!draggingId){
+      centerRowEl.classList.remove('dragging');
+      centerRowEl.querySelectorAll('.center-card').forEach(el => { el.style.transform = ''; });
+      hideInsertMarker();
+    }
+    return;
+  }
+
+  const visible = getRenderableCenterCards();
+  const from = visible.findIndex(x => x && String(x.id) === String(drag.cardId));
+  if (from < 0){ removeRemoteDragFloat(); return; }
+
+  const idx = clampInsertIndex(Number.isFinite(Number(drag.insertIndex)) ? Number(drag.insertIndex) : from);
+  const step = getStepPx();
+  centerRowEl.classList.add('dragging');
+  centerRowEl.querySelectorAll('.center-card').forEach(el => {
+    const p = Number(el.dataset.index);
+    let dx = 0;
+    if (from < idx){ if (p > from && p < idx) dx = -step; }
+    else if (from > idx){ if (p >= idx && p < from) dx = +step; }
+    el.style.transform = dx ? `translateX(${dx}px)` : '';
+  });
+
+  updateInsertMarkerFromIndex(idx, String(drag.cardId));
+  renderRemoteDragFloat(drag);
+}
+
+function subscribeDragReorder(){
+  const dRef = ref(db, `rooms/${state.roomCode}/dragReorder`);
+  onValue(dRef, snap => {
+    state.dragReorder = snap.val() || null;
+    if (!centerRowWrap.classList.contains('hidden')) renderCenterRow();
+  });
+}
 function canIPlaceChipNow(info){
   if (!info) return false;
   if (!state.roomCode) return false;
@@ -2106,6 +2244,11 @@ function getRenderableCenterCards(){
 }
 
 function applyVisualShift(){
+  if (!draggingId && state.dragReorder && state.dragReorder.playerId !== state.userId){
+    applyRemoteDragVisual();
+    return;
+  }
+
   const visible = getRenderableCenterCards();
 
   if (!draggingId || typeof insertIndex !== 'number' || draggingFromIndex < 0){
@@ -2231,8 +2374,8 @@ function calcInsertIndexFromClientX(clientX, prevInsertIndex){
   return clampInsertIndex(raw);
 }
 
-function updateInsertMarkerFromIndex(idx){
-  if (!draggingId || typeof idx !== 'number') { hideInsertMarker(); return; }
+function updateInsertMarkerFromIndex(idx, activeCardId = draggingId){
+  if (!activeCardId || typeof idx !== 'number') { hideInsertMarker(); return; }
 
   const slots = getSlotElements();
   const rowRect = centerRowEl.getBoundingClientRect();
@@ -2268,6 +2411,7 @@ function scheduleDragOverUpdate(clientX){
       insertIndex = idx;
       updateInsertMarkerFromIndex(insertIndex);
       applyVisualShift();
+      queueDragReorderMove(latestDragClientX, insertIndex);
     }
   });
 }
@@ -2316,19 +2460,19 @@ function removeDragFloat(){
   dragFloatEl.remove();
   dragFloatEl = null;
 }
-function syncDragFloatStyleFromCard(cardEl){
-  if (!dragFloatEl || !cardEl) return;
+function syncDragFloatStyleFromCard(cardEl, targetEl = dragFloatEl){
+  if (!targetEl || !cardEl) return;
   const cs = getComputedStyle(cardEl);
-  dragFloatEl.style.width = cs.width;
-  dragFloatEl.style.height = cs.height;
-  dragFloatEl.style.borderRadius = cs.borderRadius;
-  dragFloatEl.style.border = cs.border;
-  dragFloatEl.style.background = cs.background;
-  dragFloatEl.style.backgroundImage = cs.backgroundImage;
-  dragFloatEl.style.backgroundSize = cs.backgroundSize;
-  dragFloatEl.style.backgroundPosition = cs.backgroundPosition;
-  dragFloatEl.style.backgroundRepeat = cs.backgroundRepeat;
-  dragFloatEl.style.boxShadow = cs.boxShadow;
+  targetEl.style.width = cs.width;
+  targetEl.style.height = cs.height;
+  targetEl.style.borderRadius = cs.borderRadius;
+  targetEl.style.border = cs.border;
+  targetEl.style.background = cs.background;
+  targetEl.style.backgroundImage = cs.backgroundImage;
+  targetEl.style.backgroundSize = cs.backgroundSize;
+  targetEl.style.backgroundPosition = cs.backgroundPosition;
+  targetEl.style.backgroundRepeat = cs.backgroundRepeat;
+  targetEl.style.boxShadow = cs.boxShadow;
 }
 
 function beginDragFromCard(cardEl, cardObj, idx, clientX, clientY, pointerId){
@@ -2366,6 +2510,8 @@ function beginDragFromCard(cardEl, cardObj, idx, clientX, clientY, pointerId){
     applyVisualShift();
   });
 
+  publishDragReorderStart(cardObj, idx, dragCardCenterXFromPointer(clientX));
+
   dragPointerId = pointerId;
   try { cardEl.setPointerCapture(dragPointerId); } catch {}
   document.documentElement.style.userSelect = 'none';
@@ -2375,8 +2521,10 @@ function handleDraggingPointerMove(e){
   if (!draggingId) return;
   if (dragPointerId !== null && e.pointerId !== dragPointerId) return;
   e.preventDefault();
+  const centerX = dragCardCenterXFromPointer(e.clientX);
   moveDragFloat(e.clientX, e.clientY);
-  scheduleDragOverUpdate(dragCardCenterXFromPointer(e.clientX));
+  scheduleDragOverUpdate(centerX);
+  queueDragReorderMove(centerX, (typeof insertIndex === 'number' ? insertIndex : clampInsertIndex(draggingFromIndex)));
 }
 
 async function handleDraggingPointerUp(e){
@@ -2441,6 +2589,7 @@ async function finishDrag(probeX){
   }
 }
 function cleanupDrag(){
+  publishDragReorderStop().catch(() => {});
   const prevPointerId = dragPointerId;
 
   draggingId = null;
@@ -2807,6 +2956,7 @@ btnJoin.addEventListener('click', async () => {
   subscribeCenterCards();
   subscribeChipPlacements();
   subscribeCircleChips();
+  subscribeDragReorder();
   subscribeGame();
 
   updateCenterCardSizing();
@@ -3294,6 +3444,7 @@ async function resetAllChipsAndInitTurn(){
 
   patch[`chipPlacements`] = null;
   patch[`circleChips`] = null;
+  patch[`dragReorder`] = null;
 
   patch[`game`] = {
     started: true,
@@ -3341,6 +3492,7 @@ btnResetRoom.addEventListener('click', async () => {
     remove(ref(db, `${base}/centerCards`)),
     remove(ref(db, `${base}/chipPlacements`)),
     remove(ref(db, `${base}/circleChips`)),
+    remove(ref(db, `${base}/dragReorder`)),
     remove(ref(db, `${base}/game`))
   ]);
 
