@@ -1190,6 +1190,13 @@ function removeRemoteDragFloat(){
   remoteDragFloatEl = null;
 }
 
+function remoteDragState(){
+  const drag = state.dragReorder;
+  if (!drag || !drag.active || !drag.cardId) return null;
+  if (drag.playerId === state.userId) return null;
+  return drag;
+}
+
 function renderRemoteDragFloat(drag){
   if (!drag || !drag.active || !drag.cardId || !state.roomCode) { removeRemoteDragFloat(); return; }
   if (drag.playerId === state.userId) { removeRemoteDragFloat(); return; }
@@ -1197,16 +1204,20 @@ function renderRemoteDragFloat(drag){
   const card = (state.centerCards || []).find(x => x && String(x.id) === String(drag.cardId));
   if (!card) { removeRemoteDragFloat(); return; }
 
-  const cardEl = centerRowEl.querySelector(`.center-card[data-id="${CSS.escape(String(drag.cardId))}"]`);
-  if (!cardEl) { removeRemoteDragFloat(); return; }
+  const styleSourceEl =
+    centerRowEl.querySelector(`.center-card[data-id="${CSS.escape(String(drag.cardId))}"]`) ||
+    centerRowEl.querySelector('.center-card');
+
+  const ghostEl = centerRowEl.querySelector(`.center-ghost[data-id="${CSS.escape(String(drag.cardId))}"]`);
+  if (!styleSourceEl || !ghostEl) { removeRemoteDragFloat(); return; }
 
   const floatEl = ensureRemoteDragFloat();
   floatEl.textContent = String(card.label ?? '');
   floatEl.style.backgroundImage = `url('${centerRowCardBgUrl(card.label, { faceUp:false })}')`;
-  syncDragFloatStyleFromCard(cardEl, floatEl);
+  syncDragFloatStyleFromCard(styleSourceEl, floatEl);
   renderCardChipStack(floatEl, card.id);
 
-  const rect = cardEl.getBoundingClientRect();
+  const rect = ghostEl.getBoundingClientRect();
   const s = computeBaseSizing();
   const cardW = s.cardW || rect.width || 0;
   const x = Number(drag.pointerX || (rect.left + rect.width/2)) - (cardW / 2);
@@ -1214,9 +1225,10 @@ function renderRemoteDragFloat(drag){
   floatEl.style.transform = `translate(${x}px, ${y}px)`;
 }
 
+
 function applyRemoteDragVisual(){
-  const drag = state.dragReorder;
-  if (!drag || !drag.active || !drag.cardId || drag.playerId === state.userId){
+  const drag = remoteDragState();
+  if (!drag){
     removeRemoteDragFloat();
     if (!draggingId){
       centerRowEl.classList.remove('dragging');
@@ -2702,9 +2714,11 @@ function renderCenterRow(){
   const rp = state.game?.revealPhase || null;
   const revealActive = !!(rp && rp.active);
   const revealDir = revealChosen();
+  const remoteDrag = remoteDragState();
+  const draggingCardId = draggingId || (remoteDrag ? String(remoteDrag.cardId) : null);
 
   cards.forEach((c, idx) => {
-    if (draggingId && c.id === draggingId){
+    if (draggingCardId && String(c.id) === String(draggingCardId)){
       const ghost = document.createElement('div');
       ghost.className = 'center-ghost';
       ghost.dataset.id = c.id;
