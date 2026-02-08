@@ -1016,6 +1016,7 @@ let dragSourceEl = null;
 let dragSyncWriteRaf = false;
 let dragSyncLastWriteAt = 0;
 let remoteDragFloatEl = null;
+const REMOTE_DRAG_STALE_MS = 1200;
 
 let pendingCardDown = null;
 
@@ -1194,6 +1195,9 @@ function remoteDragState(){
   const drag = state.dragReorder;
   if (!drag || !drag.active || !drag.cardId) return null;
   if (drag.playerId === state.userId) return null;
+  const updatedAt = Number(drag.updatedAt || 0);
+  if (!updatedAt) return null;
+  if ((Date.now() - updatedAt) > REMOTE_DRAG_STALE_MS) return null;
   return drag;
 }
 
