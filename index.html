@@ -1197,16 +1197,28 @@ function renderRemoteDragFloat(drag){
   const card = (state.centerCards || []).find(x => x && String(x.id) === String(drag.cardId));
   if (!card) { removeRemoteDragFloat(); return; }
 
-  const cardEl = centerRowEl.querySelector(`.center-card[data-id="${CSS.escape(String(drag.cardId))}"]`);
-  if (!cardEl) { removeRemoteDragFloat(); return; }
+  const escapedId = CSS.escape(String(drag.cardId));
+  const slotEl =
+    centerRowEl.querySelector(`.center-card[data-id=\"${escapedId}\"]`) ||
+    centerRowEl.querySelector(`.center-ghost[data-id=\"${escapedId}\"]`);
+  if (!slotEl) { removeRemoteDragFloat(); return; }
 
   const floatEl = ensureRemoteDragFloat();
   floatEl.textContent = String(card.label ?? '');
   floatEl.style.backgroundImage = `url('${centerRowCardBgUrl(card.label, { faceUp:false })}')`;
-  syncDragFloatStyleFromCard(cardEl, floatEl);
+
+  if (slotEl.classList.contains('center-card')){
+    syncDragFloatStyleFromCard(slotEl, floatEl);
+  } else {
+    const s = computeBaseSizing();
+    floatEl.style.width = `${s.cardW}px`;
+    floatEl.style.height = `${s.cardH}px`;
+    floatEl.style.borderRadius = `${Math.max(4, Math.round(s.cardW * 0.14))}px`;
+  }
+
   renderCardChipStack(floatEl, card.id);
 
-  const rect = cardEl.getBoundingClientRect();
+  const rect = slotEl.getBoundingClientRect();
   const s = computeBaseSizing();
   const cardW = s.cardW || rect.width || 0;
   const x = Number(drag.pointerX || (rect.left + rect.width/2)) - (cardW / 2);
