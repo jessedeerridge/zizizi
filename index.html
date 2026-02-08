@@ -1230,6 +1230,18 @@ function applyRemoteDragVisual(){
   const from = visible.findIndex(x => x && String(x.id) === String(drag.cardId));
   if (from < 0){ removeRemoteDragFloat(); return; }
 
+  // 他プレイヤーのコミット後、dragReorder の stop が届くまでの短い間に
+  // centerCards だけ先に更新されると、行内カード＋浮遊カードが二重表示になる。
+  // その場合は fromIndex が一致しなくなるため、リモートドラッグ描画を止める。
+  const dragFromIndex = Number(drag.fromIndex);
+  if (Number.isFinite(dragFromIndex) && dragFromIndex !== from){
+    removeRemoteDragFloat();
+    centerRowEl.classList.remove('dragging');
+    centerRowEl.querySelectorAll('.center-card').forEach(el => { el.style.transform = ''; });
+    hideInsertMarker();
+    return;
+  }
+
   const idx = clampInsertIndex(Number.isFinite(Number(drag.insertIndex)) ? Number(drag.insertIndex) : from);
   const step = getStepPx();
   centerRowEl.classList.add('dragging');
