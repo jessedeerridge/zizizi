@@ -2279,6 +2279,14 @@ function hideInsertMarker(){
 }
 
 function getStepPx(){
+  const slots = getSlotElements();
+  if (slots.length >= 2){
+    const a = slots[0].getBoundingClientRect();
+    const b = slots[1].getBoundingClientRect();
+    const measured = Math.round(b.left - a.left);
+    if (Number.isFinite(measured) && measured > 0) return measured;
+  }
+
   const s = (draggingId && frozenSizing) ? frozenSizing : computeBaseSizing();
   return (s.cardW + s.gap);
 }
